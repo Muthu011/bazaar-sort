@@ -54,6 +54,12 @@ Level files may only use these ids (snake_case, case-sensitive). The code copy i
 - 44 dp is the floor on 720p phones (the 13–14 shelf boards).
 - Levels 1 to 20 use at most 8 shelves.
 
+### First-try win-rate targets (decided by Muthu, Oct 2026)
+Measured by the solver's first-try estimate (`estWinRate`):
+- Levels 1 to 6 and 8 to 9: at least 0.90.
+- Level 7 (designed near-loss) and level 10 (boss): at least 0.75.
+- Level 11 onward: normal 0.70 to 0.85; hard and boss 0.35 to 0.50.
+
 ## FTUE (first-time user flow)
 L1: one rule, "Match 3!", hand pointer. L2: hidden layer, no text. L3: first win, stars + coins. L5: Undo taught free. L7: designed near-loss, Extra Slot free once. L10 boss: Pongal kitchen, first album card (album UI ships in February). No interstitial before level 12 or after a fail. Notification permission asked after level 10.
 

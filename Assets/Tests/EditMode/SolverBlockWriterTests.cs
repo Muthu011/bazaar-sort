@@ -69,7 +69,10 @@ namespace Game.Tests.EditMode
         }
 
         [TestCase(1, "easy", "levels 1-10")]
-        [TestCase(10, "boss", "levels 1-10")]
+        [TestCase(6, "breather", "levels 1-10")]
+        [TestCase(7, "medium", "levels 7 and 10")]
+        [TestCase(9, "hard", "levels 1-10")]
+        [TestCase(10, "boss", "levels 7 and 10")]
         [TestCase(11, "easy", "easy")]
         [TestCase(12, "medium", "medium")]
         [TestCase(15, "hard", "hard")]
@@ -93,6 +96,9 @@ namespace Game.Tests.EditMode
             Assert.AreEqual(DifficultyBands.Hard.Max, DifficultyBands.Boss.Max);
             Assert.IsTrue(DifficultyBands.Onboarding.Contains(0.90));
             Assert.IsFalse(DifficultyBands.Onboarding.Contains(0.899));
+            Assert.AreEqual(0.75, DifficultyBands.OnboardingPeak.Min);
+            Assert.AreEqual(1.00, DifficultyBands.OnboardingPeak.Max);
+            Assert.IsFalse(DifficultyBands.OnboardingPeak.Contains(0.749));
         }
 
         [Test]
