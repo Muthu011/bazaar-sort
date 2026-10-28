@@ -10,10 +10,12 @@ Source of truth: the "Indian Object Sort Game: Go-Live Plan" doc. This file is t
 - Session length: 60–120 s per level.
 
 ## Mechanics (first level)
-Basic triple (1) · Hidden layer (4) · Locked shelf, opens after N clears (11) · Set Trays: tray asks for 3 different related objects, icons shown (21) · Wrapped item, revealed by a neighbouring clear (31) · Soft timer (41) · Conveyor shelf (61) · Boss every 10th level.
+Launch build (scope locked): Basic triple (1) · Hidden layer (4) · Locked shelf, opens after N clears (11) · Set Trays: tray asks for 3 different related objects, icons shown (21) · Boss every 10th level.
+After launch only (do not build before 2027-01-12): Wrapped item · Soft timer · Conveyor shelf · Magnet and Time Freeze boosters · Album · Shop-street meta · Tamil/Hindi UI.
+Build order: see the build ladder (slices 1–7) in the Sort Game Preparation Plan; only the current slice's issues may be `ready`.
 
 ## Boosters
-Undo, Shuffle, Extra Slot (temporary 6th slot), Magnet (pulls one triple), Time Freeze. 2 of each free during the tutorial. Cost: coins or one rewarded ad.
+Undo, Shuffle, Extra Slot (temporary 6th slot) at launch; Magnet and Time Freeze later. 2 of each free during the tutorial. Cost: coins or one rewarded ad.
 
 ## Worlds and objects
 1. Amma's Kitchen (1–20): filter coffee tumbler (dabara set), pressure cooker, idli stand, tawa, masala dabba, steel tiffin, coconut scraper, brass kudam, rolling pin (belan), chai kettle.
