@@ -2,7 +2,8 @@
     "name": "Game.View",
     "rootNamespace": "Game.View",
     "references": [
-        "Game.Core"
+        "Game.Core",
+        "Game.Levels"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],
