@@ -19,7 +19,7 @@ Branch `task/6-clear-reveal-win-feedback`, HEAD 133bd82 (8 commits over origin/m
 
 ## 4. No game rules in view/UI
 - Win and Stuck come from `Board.Won`/`Board.Stuck` events (`BoardView.OnWon/OnStuck`), deferred until animations finish, then `OutcomeReady`. Panels only show on that event.
-- `Retry` reloads the current level; `Next` loads `LevelSequence.Next` (loops L5 to L1). Nothing else.
+- `Retry` reloads the current level; `Next` loads the next level via `LevelSequence`. (Round 1 said it looped L5 to L1; that was the placeholder rule and was replaced in round 2: Next now stops after the last level.) Nothing else.
 - `git diff origin/main` on `Assets/Scripts/Core`, `Assets/Art`, `Packages`, `ProjectSettings`: empty. Nothing UI-related in Core.
 
 ## 5. Dependencies
@@ -41,5 +41,21 @@ Branch `task/6-clear-reveal-win-feedback`, HEAD 133bd82 (8 commits over origin/m
 - Layer reveal: items slide forward: MET (0.22 s slide, tested).
 - Win panel with Next and Retry; Stuck panel with Retry: MET (tests plus screenshots).
 - No allocations per frame during animations: MET by automated test; PR Profiler note still owed by the author.
+
+## Round 2 (review changes)
+HEAD 14e6f3f (commits 31698ee..14e6f3f over round-1 324bfe2). Owner decisions: uGUI approved; no loop after the last level, show "More levels coming soon" with Replay to L1.
+
+- Refresh (force, compile) then console: 0 errors, 0 warnings (only a transient MCP WebSocket tool-noise warning at refresh). Console still 0 after both runs.
+- Edit Mode 265/265 passed; Play Mode 29/29 passed. Reproduces the author's claims.
+- Test diff against 324bfe2: only two tests encoded the loop rule. Edit Mode `Next_AfterTheLastLevel_LoopsToTheFirst` became `TryGetNext_AfterTheLastLevel_HasNoNext_AndNeverLoops` (asserts false, index -1, HasNext false, and the one-level case): equal or stronger. Other LevelSequence tests were renamed to the new API with the same assertions plus `First_IsIndexZero` and HasNext checks. Play Mode `Next_AfterTheLastLevel_LoopsToTheFirst` was replaced by `WinLastLevelByInput_...` and `Next_OnTheLastLevel_DoesNotLoop`; the old one used `_panels.Show(Won)` as a shortcut, the new one is stronger. New `ResultPanelChoiceTests` (4 tests) and a two-line-title layout test were added. No other test removed or loosened; no thresholds changed.
+- Safe-area and 48 dp Play Mode test now loops over Win, Stuck and MoreLevelsSoon (card inside the safe area, and the Replay button in the button set), so the new panel is covered; the layout test also checks a 2-line title at 48 dp.
+- New Play Mode test: wins w1_l005 with 18 `TapTap` pointer-input moves (no Board shortcut; each move is counted via `Board.Moved` and asserted as it goes, then `IsWon`). It then asserts: More-levels panel visible, Win and Stuck hidden, title text "More levels coming soon", exactly one button (Replay), no active button labelled Next, board input locked under the panel, Replay click loads index 0 / w1_l001, panel hidden, input unlocked, start state equals the loader's board, 9 tiles drawn, and a tile tap selects a shelf. `Next_OnTheLastLevel_DoesNotLoop` checks `Next()` returns false and the level stays w1_l005.
+- Non-last win still shows Win with Next (`WinByInput_ShowsWinPanel_ThenNextLoadsW1L002`, loads w1_l002); Stuck still shows Retry (`StuckByInput_...RetryRestoresStart`); `ResultPanelChoice` tests cover Stuck on any level. Both pass.
+- Docs: `docs/approved-dependencies.md` has the uGUI row; `docs/game-design.md` Level rules state the last-level rule.
+- Screenshot `docs/qa/6/more_levels_soon_1080x1920.png` viewed: centred card, two-line title not clipped, one large Replay button, inside the safe area. Observation: the backdrop is dimmed to the point that the board is only faintly visible behind it; acceptable.
+- `git diff 324bfe2 -- Packages Assets/Scripts/Core`: empty. No `Assets/InitTestScene*` files present or tracked; working tree clean before this edit.
+- Not measured this round: frame time and build size (unchanged expectation: one small panel, no assets).
+
+All acceptance criteria remain MET, and both owner decisions are implemented and tested.
 
 RESULT: PASS
