@@ -5,7 +5,8 @@
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner",
         "Game.Core",
-        "Game.Levels"
+        "Game.Levels",
+        "Game.View"
     ],
     "includePlatforms": [
         "Editor"
