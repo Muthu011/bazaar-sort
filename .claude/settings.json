@@ -2,7 +2,7 @@
   "permissions": {
     "allow": [
       "Read", "Edit", "Write", "Glob", "Grep",
-      "mcp__unityMCP__*",
+      "mcp__UnityMCP__*",
       "Bash(git status*)", "Bash(git diff*)", "Bash(git log*)", "Bash(git fetch*)",
       "Bash(git switch*)", "Bash(git checkout -b*)", "Bash(git add*)", "Bash(git commit*)",
       "Bash(git push -u origin task/*)", "Bash(git push origin task/*)", "Bash(git pull*)",
