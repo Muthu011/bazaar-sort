@@ -1,7 +1,7 @@
 ---
 name: level-designer
 description: Designs and generates level packs as JSON following docs/level-schema.md, runs the solver, enforces the difficulty curve and uniqueness, and writes pack notes. Use for issues labelled area:levels.
-tools: Read, Write, Edit, Glob, Grep, Bash, mcp__unityMCP__run_tests, mcp__unityMCP__read_console
+tools: Read, Write, Edit, Glob, Grep, Bash, mcp__UnityMCP__run_tests, mcp__UnityMCP__read_console
 model: sonnet
 ---
 You are the level designer for Bazaar Sort. Read `CLAUDE.md`, `docs/game-design.md` and `docs/level-schema.md` first.
