@@ -70,7 +70,7 @@ namespace Game.View
             }
             _status = CreateLabel(transform, "Status", _font, StatusOrder);
             _status.text = string.Empty;
-            _status.color = StatusColor;
+            _status.color = TextColor(StatusColor);
 
             _board.Moved += OnMoved;
             _board.Cleared += OnCleared;
@@ -206,6 +206,16 @@ namespace Game.View
             return label;
         }
 
+        /// <summary>
+        /// TextMesh's built-in shader does not convert vertex colours from sRGB in a Linear colour space project, so
+        /// dark letters would come out grey. Convert here so labels match the sRGB palette like the sprites do.
+        /// </summary>
+        private static Color TextColor(Color32 srgb)
+        {
+            Color color = srgb;
+            return QualitySettings.activeColorSpace == ColorSpace.Linear ? color.linear : color;
+        }
+
         private static void DestroySafely(Object target)
         {
             if (Application.isPlaying) Destroy(target);
@@ -298,7 +308,7 @@ namespace Game.View
                 Renderer.gameObject.SetActive(true);
                 Renderer.color = Dim(style.Color, brightness);
                 Label.text = style.Letter;
-                Label.color = Dim(style.LetterColor, brightness);
+                Label.color = TextColor(Dim(style.LetterColor, brightness));
             }
 
             private static Color32 Dim(Color32 c, float brightness)
