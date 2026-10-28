@@ -47,6 +47,20 @@ namespace Game.Tests.PlayMode
 
         private Rect FullScreen => new Rect(0, 0, _camera.pixelWidth, _camera.pixelHeight);
 
+        /// <summary>
+        /// Clears and reveals animate (issue #6), so the drawn board catches up with Core a moment after the event.
+        /// </summary>
+        private IEnumerator WaitForAnimations()
+        {
+            float waited = 0f;
+            while (_view.IsAnimating && waited < 2f)
+            {
+                waited += Time.unscaledDeltaTime;
+                yield return null;
+            }
+            Assert.IsFalse(_view.IsAnimating, "Clear and reveal animations finish.");
+        }
+
         private static int FrontItemCount(Board board)
         {
             int count = 0;
@@ -94,6 +108,7 @@ namespace Game.Tests.PlayMode
 
             // Moved + Cleared: tumbler from s2 slot 1 to s1 makes a triple, which clears.
             Assert.IsTrue(board.TryMove(1, 1, 0));
+            yield return WaitForAnimations();
             for (int slot = 0; slot < Shelf.SlotCount; slot++)
             {
                 Assert.IsNull(_view.GetFrontLetter(0, slot), $"s1 slot {slot} is drawn empty after Cleared.");
@@ -105,6 +120,7 @@ namespace Game.Tests.PlayMode
             Assert.IsTrue(board.TryMove(3, 0, 2));
             Assert.IsTrue(board.TryMove(3, 1, 1));
             Assert.IsTrue(board.IsWon);
+            yield return WaitForAnimations();
             Assert.AreEqual(0, _view.VisibleFrontTileCount);
             Assert.AreEqual(BoardView.WonText, _view.StatusText, "Won event shows the win status.");
         }
@@ -135,6 +151,7 @@ namespace Game.Tests.PlayMode
 
             Assert.IsTrue(board.TryMove(1, 0, 0)); // tumbler triple clears on s1
             Assert.IsTrue(board.TryMove(1, 1, 0)); // s2 front empties, its hidden layer slides forward
+            yield return WaitForAnimations();
             Assert.AreEqual("W", _view.GetFrontLetter(1, 0));
             Assert.AreEqual("W", _view.GetFrontLetter(1, 1));
             Assert.AreEqual("I", _view.GetFrontLetter(1, 2));
