@@ -1,4 +1,5 @@
 using System;
+using Game.Core;
 using UnityEngine;
 
 namespace Game.View
@@ -55,9 +56,11 @@ namespace Game.View
     {
         private readonly Rect[] _shelves;
         private readonly BoardLayoutSettings _settings;
+        private readonly int _slotCount;
 
-        private BoardLayout(Rect[] shelves, float tileSize, int columns, int rows, Rect playfield, BoardLayoutSettings settings)
+        private BoardLayout(Rect[] shelves, int slotCount, float tileSize, int columns, int rows, Rect playfield, BoardLayoutSettings settings)
         {
+            _slotCount = slotCount;
             _shelves = shelves;
             TileSize = tileSize;
             Columns = columns;
@@ -76,6 +79,9 @@ namespace Game.View
         public Rect Playfield { get; }
 
         public int ShelfCount => _shelves.Length;
+
+        /// <summary>Front-row slots per shelf.</summary>
+        public int SlotsPerShelf => _slotCount;
 
         /// <summary>Shelf rectangle (background) in pixels.</summary>
         public Rect GetShelfRect(int shelf) => _shelves[shelf];
@@ -98,6 +104,65 @@ namespace Game.View
             float size = _settings.HiddenStripHeight * TileSize;
             // Sits between the top of the front tile and the top padding of the shelf.
             return new Rect(front.center.x - size * 0.5f, front.yMax, size, size);
+        }
+
+        /// <summary>
+        /// Smallest hit target side, in screen pixels (issue #5: touch targets at least 48 px). Hit rectangles smaller
+        /// than this are grown around their centre.
+        /// </summary>
+        public const float MinTouchTargetPx = 48f;
+
+        /// <summary>
+        /// Where a press or drop counts as "on this shelf": the shelf rectangle grown by half the column gap on each
+        /// side and half the row gap above and below, so neighbouring shelves' hit areas meet without overlapping and
+        /// a drop in the gap still lands on the nearest shelf. At least <see cref="MinTouchTargetPx"/> each way.
+        /// </summary>
+        public Rect GetShelfHitRect(int shelf)
+        {
+            var s = _shelves[shelf];
+            float gx = _settings.ColumnGap * TileSize * 0.5f;
+            float gy = _settings.RowGap * TileSize * 0.5f;
+            return AtLeast(new Rect(s.x - gx, s.y - gy, s.width + 2f * gx, s.height + 2f * gy), MinTouchTargetPx);
+        }
+
+        /// <summary>
+        /// Where a press picks up the item in front slot <paramref name="slot"/>: a full-height column of the shelf hit
+        /// area, split halfway between neighbouring tiles. Wider and taller than the tile itself, so small tiles stay
+        /// easy to hit. At least <see cref="MinTouchTargetPx"/> each way.
+        /// </summary>
+        public Rect GetSlotHitRect(int shelf, int slot)
+        {
+            int last = _slotCount - 1;
+            var hit = GetShelfHitRect(shelf);
+            float left = slot == 0 ? hit.xMin : (GetFrontSlotRect(shelf, slot - 1).xMax + GetFrontSlotRect(shelf, slot).xMin) * 0.5f;
+            float right = slot == last ? hit.xMax : (GetFrontSlotRect(shelf, slot).xMax + GetFrontSlotRect(shelf, slot + 1).xMin) * 0.5f;
+            return AtLeast(new Rect(left, hit.y, right - left, hit.height), MinTouchTargetPx);
+        }
+
+        /// <summary>
+        /// The shelf and slot column under <paramref name="point"/> (pixels, same space as the layout), or
+        /// <see cref="BoardTarget.None"/>.
+        /// </summary>
+        public BoardTarget HitTest(Vector2 point)
+        {
+            for (int i = 0; i < _shelves.Length; i++)
+            {
+                if (!GetShelfHitRect(i).Contains(point)) continue;
+                int slots = _slotCount;
+                for (int slot = 0; slot < slots; slot++)
+                {
+                    if (GetSlotHitRect(i, slot).Contains(point)) return BoardTarget.At(i, slot);
+                }
+                return BoardTarget.At(i, -1);
+            }
+            return BoardTarget.None;
+        }
+
+        private static Rect AtLeast(Rect r, float min)
+        {
+            if (r.width < min) r = new Rect(r.center.x - min * 0.5f, r.y, min, r.height);
+            if (r.height < min) r = new Rect(r.x, r.center.y - min * 0.5f, r.width, min);
+            return r;
         }
 
         /// <summary>Shelf width in tiles for the given settings.</summary>
@@ -171,7 +236,7 @@ namespace Game.View
                 rects[i] = new Rect(x, y, w, h);
             }
 
-            return new BoardLayout(rects, t, columns, rows, playfield, settings);
+            return new BoardLayout(rects, slotCount, t, columns, rows, playfield, settings);
         }
     }
 }

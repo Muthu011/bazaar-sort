@@ -97,6 +97,77 @@ namespace Game.Tests.EditMode
             }
         }
 
+        [TestCaseSource(nameof(Screens))]
+        public void HitTargets_AreAtLeast48Px_ForEveryShelfCount(string name, int width, int height, Vector4 insets)
+        {
+            var safe = SafeArea(width, height, insets);
+            for (int count = 4; count <= 14; count++)
+            {
+                var layout = BoardLayout.Compute(count, Shelf.SlotCount, safe, BoardLayoutSettings.Default);
+                for (int i = 0; i < count; i++)
+                {
+                    string context = $"{name}, {count} shelves, shelf {i}";
+                    var shelfHit = layout.GetShelfHitRect(i);
+                    Assert.GreaterOrEqual(shelfHit.width, 48f, $"{context}: drop target width");
+                    Assert.GreaterOrEqual(shelfHit.height, 48f, $"{context}: drop target height");
+                    Assert.IsTrue(Contains(shelfHit, layout.GetShelfRect(i)), $"{context}: drop target covers the shelf");
+
+                    for (int slot = 0; slot < Shelf.SlotCount; slot++)
+                    {
+                        var slotHit = layout.GetSlotHitRect(i, slot);
+                        Assert.GreaterOrEqual(slotHit.width, 48f, $"{context} slot {slot}: pick target width {slotHit.width}");
+                        Assert.GreaterOrEqual(slotHit.height, 48f, $"{context} slot {slot}: pick target height {slotHit.height}");
+                        Assert.IsTrue(Contains(slotHit, layout.GetFrontSlotRect(i, slot)), $"{context} slot {slot}: pick target covers the tile");
+                        Assert.IsTrue(Contains(shelfHit, slotHit), $"{context} slot {slot}: pick target inside drop target");
+                        for (int other = slot + 1; other < Shelf.SlotCount; other++)
+                        {
+                            Assert.IsFalse(Overlaps(slotHit, layout.GetSlotHitRect(i, other)), $"{context}: pick targets {slot} and {other} overlap");
+                        }
+                    }
+
+                    for (int j = i + 1; j < count; j++)
+                    {
+                        Assert.IsFalse(Overlaps(shelfHit, layout.GetShelfHitRect(j)), $"{context}: drop targets {i} and {j} overlap");
+                    }
+                }
+            }
+        }
+
+        [TestCaseSource(nameof(Screens))]
+        public void HitTest_FindsEveryTile_AndMissesTheBackground(string name, int width, int height, Vector4 insets)
+        {
+            var safe = SafeArea(width, height, insets);
+            for (int count = 4; count <= 14; count++)
+            {
+                var layout = BoardLayout.Compute(count, Shelf.SlotCount, safe, BoardLayoutSettings.Default);
+                for (int i = 0; i < count; i++)
+                {
+                    for (int slot = 0; slot < Shelf.SlotCount; slot++)
+                    {
+                        var tile = layout.GetFrontSlotRect(i, slot);
+                        Assert.AreEqual(BoardTarget.At(i, slot), layout.HitTest(tile.center), $"{name}, {count} shelves: tile centre");
+                        Assert.AreEqual(BoardTarget.At(i, slot), layout.HitTest(layout.GetHiddenSlotRect(i, slot).center),
+                            $"{name}, {count} shelves: the peeking hidden tile above counts as the same column");
+                    }
+                }
+
+                // The HUD strip at the very top of the safe area is not a shelf.
+                Assert.AreEqual(BoardTarget.None, layout.HitTest(new Vector2(safe.center.x, safe.yMax - 1f)), $"{name}, {count} shelves: HUD");
+            }
+        }
+
+        [Test]
+        public void HitTest_InGapBetweenRows_PicksNearestShelf()
+        {
+            var layout = BoardLayout.Compute(4, Shelf.SlotCount, new Rect(0, 0, 1080, 1920), BoardLayoutSettings.Default);
+            Assert.AreEqual(1, layout.Columns, "Precondition: one column.");
+            float x = layout.GetFrontSlotRect(0, 1).center.x;
+            float gapTop = layout.GetShelfRect(0).yMin;
+            float gapBottom = layout.GetShelfRect(1).yMax;
+            Assert.AreEqual(0, layout.HitTest(new Vector2(x, gapTop - 1f)).Shelf, "Just below shelf 0");
+            Assert.AreEqual(1, layout.HitTest(new Vector2(x, gapBottom + 1f)).Shelf, "Just above shelf 1");
+        }
+
         [Test]
         public void FourShelves_On16By9_UseOneColumn()
         {
