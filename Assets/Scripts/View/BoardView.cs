@@ -26,6 +26,11 @@ namespace Game.View
     /// animating shelf (a move from or to it, a selection, a drag, a shake) first snaps that shelf to its final state.
     /// Won and Stuck are shown (<see cref="OutcomeReady"/>) once every animation has finished; from the Won or Stuck
     /// event on, <see cref="InputLocked"/> is true.
+    ///
+    /// Locked shelves (issue #19): a dim scrim over the shelf and a placeholder padlock on its top-right corner showing
+    /// the clears left (<see cref="Shelf.LockClearsLeft"/>). The number is re-read from the board on every Cleared and
+    /// bumps (<see cref="LockMotion"/>) when it goes down; on ShelfUnlocked the padlock pops off (grows and fades) and
+    /// the scrim fades with it. The view only shows the lock; the board refuses the moves.
     /// </summary>
     public sealed class BoardView : MonoBehaviour, IBoardInputView
     {
@@ -39,6 +44,9 @@ namespace Game.View
         private const int FrontLabelOrder = 5;
         private const int DragTileOrder = 20;
         private const int DragLabelOrder = 21;
+        private const int LockScrimOrder = 10;
+        private const int PadlockOrder = 11;
+        private const int PadlockLabelOrder = 12;
         private const int StatusOrder = 30;
         private const int LabelFontSize = 64;
         private const float LabelHeightInTile = 0.6f;
@@ -50,6 +58,22 @@ namespace Game.View
         private static readonly Color32 ShelfColor = new Color32(0xA1, 0x88, 0x7F, 0xFF);
         private static readonly Color32 StatusColor = new Color32(0xFF, 0xF8, 0xE1, 0xFF);
         internal const float HiddenDim = 0.55f;
+
+        /// <summary>Brass padlock, dark number: reads on the shelf brown and the dark background.</summary>
+        private static readonly Color32 PadlockColor = new Color32(0xE0, 0xA5, 0x26, 0xFF);
+        private static readonly Color32 PadlockTextColor = new Color32(0x3E, 0x27, 0x23, 0xFF);
+
+        /// <summary>Dark scrim over a locked shelf: its items stay readable but look shut away.</summary>
+        private static readonly Color32 LockScrimColor = new Color32(0x00, 0x00, 0x00, 0x55);
+
+        /// <summary>Padlock width as a multiple of the tile side.</summary>
+        internal const float PadlockWidthTiles = 0.55f;
+
+        /// <summary>Number height as a fraction of the padlock body's height.</summary>
+        private const float PadlockNumberHeight = 0.7f;
+
+        // "0".."99" made once, so showing a count never allocates.
+        private static readonly string[] CountTexts = BuildCountTexts(100);
 
         /// <summary>Queued clear/reveal steps per shelf. A longer chain than this snaps the shelf to its end state.</summary>
         internal const int MaxQueuedSteps = 16;
@@ -90,6 +114,7 @@ namespace Game.View
 
         // Clear / reveal animations and the outcome they hold back.
         private int _animatingShelves;
+        private int _lockMotions;
         private BoardOutcome _pendingOutcome;
         private BoardOutcome _outcome;
 
@@ -144,11 +169,16 @@ namespace Game.View
             _board.Moved += OnMoved;
             _board.Cleared += OnCleared;
             _board.LayerRevealed += OnLayerRevealed;
+            _board.ShelfUnlocked += OnShelfUnlocked;
             _board.Won += OnWon;
             _board.Stuck += OnStuck;
 
             Relayout(safeArea);
-            for (int i = 0; i < _shelves.Length; i++) RefreshShelf(i);
+            for (int i = 0; i < _shelves.Length; i++)
+            {
+                RefreshShelf(i);
+                InitLock(i);
+            }
         }
 
         /// <summary>Stops listening to the board and destroys the shelf objects.</summary>
@@ -159,6 +189,7 @@ namespace Game.View
                 _board.Moved -= OnMoved;
                 _board.Cleared -= OnCleared;
                 _board.LayerRevealed -= OnLayerRevealed;
+                _board.ShelfUnlocked -= OnShelfUnlocked;
                 _board.Won -= OnWon;
                 _board.Stuck -= OnStuck;
                 _board = null;
@@ -176,6 +207,7 @@ namespace Game.View
             _dragShelf = _dragSlot = -1;
             _motionShelf = _motionSlot = -1;
             _animatingShelves = 0;
+            _lockMotions = 0;
             _pendingOutcome = BoardOutcome.None;
             _outcome = BoardOutcome.None;
         }
@@ -199,11 +231,22 @@ namespace Game.View
             CompleteAnimations();
             _layout = BoardLayout.Compute(_board.ShelfCount, Shelf.SlotCount, safeArea, _settings, ScreenDensity.Current);
             float labelScale = _layout.TileSize * LabelHeightInTile / PixelsPerUnit * 10f / LabelFontSize;
+            float padlockWidth = _layout.TileSize * PadlockWidthTiles;
+            float padlockNumberScale = padlockWidth * PlaceholderSprites.PadlockBodyHeight * PadlockNumberHeight
+                / PixelsPerUnit * 10f / LabelFontSize;
 
             for (int i = 0; i < _shelves.Length; i++)
             {
                 var shelf = _shelves[i];
-                Place(shelf.Background, _layout.GetShelfRect(i));
+                var shelfRect = _layout.GetShelfRect(i);
+                Place(shelf.Background, shelfRect);
+                Place(shelf.Scrim, shelfRect);
+                // Padlock on the shelf's top-right corner, straddling the top edge, clear of the front row.
+                SetPixelPosition(shelf.Lock, new Vector2(shelfRect.xMax - 0.35f * padlockWidth, shelfRect.yMax - 0.1f * padlockWidth));
+                float w = padlockWidth / PixelsPerUnit;
+                shelf.LockSprite.transform.localScale = new Vector3(w, w, 1f);
+                shelf.LockLabel.transform.localPosition = new Vector3(0f, -PlaceholderSprites.PadlockBodyCentreOffset * w, 0f);
+                shelf.LockLabel.characterSize = padlockNumberScale;
                 for (int slot = 0; slot < Shelf.SlotCount; slot++)
                 {
                     Place(shelf.Front[slot], _layout.GetFrontSlotRect(i, slot), labelScale);
@@ -378,6 +421,7 @@ namespace Game.View
         {
             var step = new AnimStep { IsReveal = false, Item = info.ItemId };
             Enqueue(info.ShelfIndex, step);
+            RefreshLockCounts();
         }
 
         private void OnLayerRevealed(LayerRevealInfo info)
@@ -415,6 +459,7 @@ namespace Game.View
         public void AdvanceAnimations(float seconds)
         {
             if (_board == null) return;
+            AdvanceLocks(seconds);
 
             if (_animatingShelves > 0)
             {
@@ -452,7 +497,121 @@ namespace Game.View
         public void CompleteAnimations()
         {
             if (_shelves == null) return;
-            for (int i = 0; i < _shelves.Length; i++) CompleteShelf(i);
+            for (int i = 0; i < _shelves.Length; i++)
+            {
+                CompleteShelf(i);
+                FinishLockMotion(i);
+            }
+        }
+
+        // ---- Padlocks (issue #19) ----
+
+        /// <summary>Shows the padlock and scrim on a locked shelf with its count, or hides them on an open one.</summary>
+        private void InitLock(int index)
+        {
+            var visual = _shelves[index];
+            var shelf = _board.GetShelf(index);
+            visual.TickElapsed = -1f;
+            visual.PopElapsed = -1f;
+            bool locked = shelf.IsLocked;
+            visual.Lock.gameObject.SetActive(locked);
+            visual.Scrim.gameObject.SetActive(locked);
+            if (!locked) return;
+            SetLockCount(visual, shelf.LockClearsLeft);
+            SetLockLook(visual, 1f, 1f);
+        }
+
+        private void OnShelfUnlocked(int index)
+        {
+            var visual = _shelves[index];
+            if (!visual.Lock.gameObject.activeSelf) return;
+            FinishLockMotion(index);
+            SetLockCount(visual, 0);
+            visual.PopElapsed = 0f;
+            _lockMotions++;
+        }
+
+        /// <summary>Re-reads every padlock's count after a clear and bumps the ones that went down.</summary>
+        private void RefreshLockCounts()
+        {
+            for (int i = 0; i < _shelves.Length; i++)
+            {
+                var visual = _shelves[i];
+                if (!visual.Lock.gameObject.activeSelf || visual.PopElapsed >= 0f) continue;
+                int left = _board.GetShelf(i).LockClearsLeft;
+                if (left == 0 || left == visual.LockShown) continue; // 0: ShelfUnlocked follows and pops it
+                SetLockCount(visual, left);
+                if (visual.TickElapsed < 0f) _lockMotions++;
+                visual.TickElapsed = 0f;
+            }
+        }
+
+        private void AdvanceLocks(float seconds)
+        {
+            if (_lockMotions == 0) return;
+            for (int i = 0; i < _shelves.Length; i++)
+            {
+                var visual = _shelves[i];
+                if (visual.PopElapsed >= 0f)
+                {
+                    visual.PopElapsed += seconds;
+                    if (visual.PopElapsed >= LockMotion.PopSeconds) FinishLockMotion(i);
+                    else SetLockLook(visual, LockMotion.PopScale(visual.PopElapsed), LockMotion.PopAlpha(visual.PopElapsed));
+                }
+                else if (visual.TickElapsed >= 0f)
+                {
+                    visual.TickElapsed += seconds;
+                    if (visual.TickElapsed >= LockMotion.TickSeconds) FinishLockMotion(i);
+                    else SetLockLook(visual, LockMotion.TickScale(visual.TickElapsed), 1f);
+                }
+            }
+        }
+
+        /// <summary>Ends a running tick (back to rest) or pop (padlock and scrim hidden) at once.</summary>
+        private void FinishLockMotion(int index)
+        {
+            var visual = _shelves[index];
+            if (visual.PopElapsed >= 0f)
+            {
+                visual.PopElapsed = -1f;
+                _lockMotions--;
+                visual.Lock.gameObject.SetActive(false);
+                visual.Scrim.gameObject.SetActive(false);
+                SetLockLook(visual, 1f, 1f);
+            }
+            if (visual.TickElapsed >= 0f)
+            {
+                visual.TickElapsed = -1f;
+                _lockMotions--;
+                SetLockLook(visual, 1f, 1f);
+            }
+        }
+
+        private static void SetLockCount(ShelfVisual visual, int count)
+        {
+            visual.LockShown = count;
+            visual.LockLabel.text = count >= 0 && count < CountTexts.Length ? CountTexts[count] : count.ToString();
+        }
+
+        private static void SetLockLook(ShelfVisual visual, float scale, float alpha)
+        {
+            visual.Lock.localScale = new Vector3(scale, scale, 1f);
+            Color32 lockColor = PadlockColor;
+            lockColor.a = (byte)(alpha * 255f + 0.5f);
+            visual.LockSprite.color = lockColor;
+            Color text = TextColor(PadlockTextColor);
+            text.a = alpha;
+            visual.LockLabel.color = text;
+            Color32 scrim = LockScrimColor;
+            scrim.a = (byte)(LockScrimColor.a * alpha + 0.5f);
+            visual.Scrim.color = scrim;
+        }
+
+        private static string[] BuildCountTexts(int count)
+        {
+            var texts = new string[count];
+            for (int i = 0; i < count; i++) texts[i] = i.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            return texts;
         }
 
         private static float StepDuration(in AnimStep step) =>
@@ -725,6 +884,24 @@ namespace Game.View
         internal bool IsShelfRevealing(int shelf) =>
             _shelves[shelf].StepCount > 0 && _shelves[shelf].Steps[_shelves[shelf].StepHead].IsReveal;
 
+        /// <summary>True while the padlock (and scrim) on <paramref name="shelf"/> is drawn, popping included.</summary>
+        internal bool IsPadlockVisible(int shelf) => _shelves[shelf].Lock.gameObject.activeSelf;
+
+        /// <summary>The number on the padlock, or null when no padlock is drawn.</summary>
+        internal string GetPadlockText(int shelf) => IsPadlockVisible(shelf) ? _shelves[shelf].LockLabel.text : null;
+
+        internal bool IsScrimVisible(int shelf) => _shelves[shelf].Scrim.gameObject.activeSelf;
+
+        /// <summary>True while the padlock is popping off.</summary>
+        internal bool IsPadlockPopping(int shelf) => _shelves[shelf].PopElapsed >= 0f;
+
+        /// <summary>True while the padlock bumps after its count went down.</summary>
+        internal bool IsPadlockTicking(int shelf) => _shelves[shelf].TickElapsed >= 0f;
+
+        internal float GetPadlockScale(int shelf) => _shelves[shelf].Lock.localScale.x;
+
+        internal Vector2 GetPadlockPixelPosition(int shelf) => _shelves[shelf].Lock.position * PixelsPerUnit;
+
         /// <summary>Where a hidden-strip tile rests, in pixels.</summary>
         internal Vector2 GetHiddenTileHome(int shelf, int slot) => _layout.GetHiddenSlotRect(shelf, slot).center;
 
@@ -769,6 +946,15 @@ namespace Game.View
             public int StepCount;
             public float StepElapsed;
 
+            // Padlock for a locked shelf: hidden on open shelves. Times are -1 when idle.
+            public readonly SpriteRenderer Scrim;
+            public readonly Transform Lock;
+            public readonly SpriteRenderer LockSprite;
+            public readonly TextMesh LockLabel;
+            public int LockShown;
+            public float TickElapsed = -1f;
+            public float PopElapsed = -1f;
+
             public ShelfVisual(Transform parent, int index, Font font)
             {
                 var root = new GameObject("Shelf " + index).transform;
@@ -780,6 +966,18 @@ namespace Game.View
                     Front[slot] = new Tile(root, "Front " + slot, font, FrontTileOrder, FrontLabelOrder);
                     Hidden[slot] = new Tile(root, "Hidden " + slot, font, HiddenTileOrder, HiddenLabelOrder);
                 }
+
+                Scrim = CreateSprite(root, "Lock Scrim", LockScrimOrder);
+                Lock = new GameObject("Padlock").transform;
+                Lock.SetParent(root, false);
+                var spriteObject = new GameObject("Padlock Sprite");
+                spriteObject.transform.SetParent(Lock, false);
+                LockSprite = spriteObject.AddComponent<SpriteRenderer>();
+                LockSprite.sprite = PlaceholderSprites.Padlock;
+                LockSprite.sortingOrder = PadlockOrder;
+                LockLabel = CreateLabel(Lock, "Padlock Count", font, PadlockLabelOrder);
+                Scrim.gameObject.SetActive(false);
+                Lock.gameObject.SetActive(false);
             }
         }
 
