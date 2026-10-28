@@ -7,6 +7,9 @@ namespace Game.Core
     /// One shelf: a front row of <see cref="SlotCount"/> slots plus a stack of hidden layers behind it.
     /// Item ids are plain strings (snake_case object ids from the level JSON); <c>null</c> means an empty slot.
     /// Only <see cref="Board"/> mutates a shelf; everything public here is read-only.
+    ///
+    /// A shelf may be locked (level kind <c>locked</c>): it then takes no moves in or out until the board has made
+    /// <see cref="LockClears"/> triple clears, then it opens and acts like a normal shelf. See <see cref="Board"/>.
     /// </summary>
     public sealed class Shelf
     {
@@ -17,6 +20,7 @@ namespace Game.Core
         // Hidden layers in reveal order: _hidden[_nextHidden] is the layer directly behind the front row.
         private readonly List<string[]> _hidden = new List<string[]>();
         private int _nextHidden;
+        private int _lockClearsLeft;
 
         /// <summary>
         /// Builds a shelf from level data. <paramref name="layers"/>[0] is the front row, [1] the layer directly
@@ -25,12 +29,19 @@ namespace Game.Core
         /// </summary>
         /// <param name="layers">Layers front-to-back. Must contain at least one layer (the front row).</param>
         /// <param name="id">Optional shelf id from the level file (e.g. "s1").</param>
-        public Shelf(IReadOnlyList<IReadOnlyList<string>> layers, string id = null)
+        /// <param name="lockClears">
+        /// 0 for a normal shelf. For a locked shelf, the number of triple clears the board must make before it opens
+        /// (<c>lockClears</c> in the level JSON).
+        /// </param>
+        public Shelf(IReadOnlyList<IReadOnlyList<string>> layers, string id = null, int lockClears = 0)
         {
             if (layers == null) throw new ArgumentNullException(nameof(layers));
             if (layers.Count == 0) throw new ArgumentException("A shelf needs at least a front row.", nameof(layers));
+            if (lockClears < 0) throw new ArgumentOutOfRangeException(nameof(lockClears), "lockClears must not be negative.");
 
             Id = id;
+            LockClears = lockClears;
+            _lockClearsLeft = lockClears;
             for (int layer = 0; layer < layers.Count; layer++)
             {
                 var source = layers[layer];
@@ -55,8 +66,27 @@ namespace Game.Core
         {
         }
 
+        /// <summary>
+        /// A locked shelf that opens after <paramref name="lockClears"/> board clears (must be at least 1).
+        /// Convenience for tests and tools: <c>Shelf.Locked(2, new[] {"a", "b", null})</c>.
+        /// </summary>
+        public static Shelf Locked(int lockClears, params string[][] layers)
+        {
+            if (lockClears < 1) throw new ArgumentOutOfRangeException(nameof(lockClears), "A locked shelf needs lockClears of at least 1.");
+            return new Shelf((IReadOnlyList<IReadOnlyList<string>>)layers, null, lockClears);
+        }
+
         /// <summary>Shelf id from the level file, or null.</summary>
         public string Id { get; }
+
+        /// <summary>Clears the board needed to open this shelf at the start (0 for a normal shelf).</summary>
+        public int LockClears { get; }
+
+        /// <summary>Clears still needed before this shelf opens; 0 once open (or for a normal shelf).</summary>
+        public int LockClearsLeft => _lockClearsLeft;
+
+        /// <summary>True while the shelf is locked: no item may leave it and none may be put on it.</summary>
+        public bool IsLocked => _lockClearsLeft > 0;
 
         /// <summary>Number of hidden layers still behind the front row.</summary>
         public int HiddenLayerCount => _hidden.Count - _nextHidden;
@@ -127,6 +157,17 @@ namespace Game.Core
                 }
                 return -1;
             }
+        }
+
+        /// <summary>
+        /// Counts one board clear against the lock. Returns true when this call opened the shelf; false when it was
+        /// already open or is still locked.
+        /// </summary>
+        internal bool CountDownLock()
+        {
+            if (_lockClearsLeft == 0) return false;
+            _lockClearsLeft--;
+            return _lockClearsLeft == 0;
         }
 
         internal void SetFrontItem(int slot, string item)
