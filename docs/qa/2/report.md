@@ -44,3 +44,29 @@ No rule bugs found.
 5. `Shelf` has a `params string[][]` overload next to the `IReadOnlyList` one. This is harmless but could make overload resolution ambiguous for callers passing `null`.
 
 RESULT: PASS
+
+## Round 2 (commit e3f2e14)
+
+Unity MCP did not connect for QA on this branch. Test and console results below are the producer's, not re-run by QA: EditMode 60/60 passed, PlayMode 1/1 passed, console 0 errors and 0 warnings after clear and recompile.
+
+### Decision 1: same-shelf drop is a cancel
+- `Board.CanMove` checks `fromShelf == toShelf` (SameShelf) before the `HasFreeFrontSlot` check (TargetFull). Precedence is as decided. Met.
+- `TryMove` returns false and changes nothing on SameShelf. No events are raised (`TryMove_ToSameShelf_IsRejected` asserts an empty event log). Core has no move counter, so "no move counted" holds because Moved is not raised. The "no shake" part is a view concern (#3 or later) and is documented on `MoveResult.SameShelf`.
+- New test `TryMove_BackOntoOwnFullShelf_IsACancel_NotTargetFull` covers the precedence over TargetFull. Met.
+
+### Decision 2: no starting triples
+- `Board` constructor calls `AssertNoStartingMatch()` after the silent reveal loop, so a triple revealed behind an empty front row is caught too. The method is `[Conditional("UNITY_ASSERTIONS")]` and throws `InvalidOperationException` with the shelf index and item id. It uses the new non-mutating `Shelf.FindFrontMatch()`; `TryClearFrontMatch` now reuses it with no behaviour change. Met.
+- Tests: `Construct_StartingFrontTriple_FailsSafetyNet` (also checks "Shelf 1" and the item id in the message), `Construct_TripleRevealedBehindEmptyFront_FailsSafetyNet`, `Construct_TripleInHiddenLayer_IsAllowed`. All three requested cases are covered. Met.
+- No `DEVELOPMENT_BUILD` use remains in the diff.
+
+### Core purity
+`Game.Core.asmdef` has `noEngineReferences: true` and no references. grep finds no `using UnityEngine` in `Assets/Scripts/Core`; the only match is a comment in `GameRules.cs`. `System.Diagnostics` is plain .NET. Met.
+
+### Notes (not failures)
+1. The two safety-net throw tests only pass when `UNITY_ASSERTIONS` is defined (Editor and development builds). They are fine for Edit Mode. If the tests are ever run in a release player build, they would fail, so guard them with `#if UNITY_ASSERTIONS` then.
+2. The loader (#3) must implement the rejection of starting triples, including triples that appear after the initial reveal. The solver or validator should use the same rule. Release builds do not check this in Board.
+3. The doc comment on the constructor says "editor and development builds". That is accurate for UNITY_ASSERTIONS.
+
+No failures found.
+
+RESULT: PASS
