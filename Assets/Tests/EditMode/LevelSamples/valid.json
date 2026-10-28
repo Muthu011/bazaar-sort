@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "id": "sample_valid",
+  "world": 1,
+  "index": 2,
+  "role": "medium",
+  "tutorial": "layers",
+  "moveLimit": 30,
+  "timeLimitSec": null,
+  "shelves": [
+    { "id": "s1", "kind": "normal", "lockClears": 0, "layers": [
+      ["tumbler", "tawa", null],
+      ["idli_stand", "idli_stand", "tawa"],
+      ["chai_kettle", "chai_kettle", "chai_kettle"]
+    ] },
+    { "id": "s2", "kind": "normal", "lockClears": 0, "layers": [["tawa", "tumbler", "idli_stand"]] },
+    { "id": "s3", "kind": "normal", "lockClears": 0, "layers": [
+      [null, null, null],
+      ["tumbler", "masala_dabba", "masala_dabba"]
+    ] },
+    { "id": "s4", "kind": "normal", "lockClears": 0, "layers": [["masala_dabba", null, null]] }
+  ],
+  "trays": [],
+  "wrapped": []
+}

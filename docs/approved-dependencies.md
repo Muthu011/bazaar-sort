@@ -7,6 +7,7 @@ Agents may only add what is listed here. To propose something new, open an issue
 | Unity 6 LTS, 2D, URP | Engine | |
 | Unity Test Framework | Tests | |
 | Unity Input System | Input | |
+| Newtonsoft Json (`com.unity.nuget.newtonsoft-json`, Unity's official package) | Level JSON parsing in `Game.Levels` | Approved by Muthu 2026-10-28. Not used in `Game.Core` |
 | TextMeshPro | Text | |
 | DOTween (free) or Unity's own tweening code | Animation | pick one in week 1 |
 | MCP for Unity (CoplayDev, MIT) | Editor bridge for agents | editor-only, excluded from builds |

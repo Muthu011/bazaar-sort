@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "id": "sample_no_empty_front_slot",
+  "world": 1,
+  "index": 1,
+  "role": "easy",
+  "shelves": [
+    { "id": "s1", "kind": "normal", "lockClears": 0, "layers": [["tumbler", "tawa", "idli_stand"]] },
+    { "id": "s2", "kind": "normal", "lockClears": 0, "layers": [["tawa", "idli_stand", "tumbler"]] },
+    { "id": "s3", "kind": "normal", "lockClears": 0, "layers": [["idli_stand", "tumbler", "tawa"]] }
+  ],
+  "trays": [],
+  "wrapped": []
+}

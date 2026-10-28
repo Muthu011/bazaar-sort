@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "id": "sample_starting_triple_front",
+  "world": 1,
+  "index": 1,
+  "role": "easy",
+  "shelves": [
+    { "id": "s1", "kind": "normal", "lockClears": 0, "layers": [["tumbler", "tumbler", "tumbler"]] },
+    { "id": "s2", "kind": "normal", "lockClears": 0, "layers": [["idli_stand", "masala_dabba", "idli_stand"]] },
+    { "id": "s3", "kind": "normal", "lockClears": 0, "layers": [["masala_dabba", "masala_dabba", "idli_stand"]] },
+    { "id": "s4", "kind": "normal", "lockClears": 0, "layers": [[null, null, null]] }
+  ],
+  "trays": [],
+  "wrapped": []
+}
