@@ -6,6 +6,7 @@ Launch: Google Play India, 12 January 2027 (before Pongal). Owner and only human
 
 ## Repo layout
 - `Assets/Scripts/Core/` — pure C# game logic (board, shelves, moves, solver). No UnityEngine dependence except math types. All rules live here and are unit tested.
+  Core holds game rules only: no selection, drag, or other interaction state (that lives in View).
 - `Assets/Scripts/Levels/` — level JSON parsing and validation (Game.Levels, Newtonsoft), building Core objects.
 - `Assets/Scripts/View/` — MonoBehaviours, animation, input. Thin; calls Core.
 - `Assets/Scripts/UI/` — screens built from code + a few prefab templates in `Assets/Prefabs/UI/`.
