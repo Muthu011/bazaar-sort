@@ -5,7 +5,9 @@
         "UnityEngine.TestRunner",
         "Game.Core",
         "Game.View",
-        "Game.Levels"
+        "Game.Levels",
+        "Unity.InputSystem",
+        "Unity.InputSystem.TestFramework"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

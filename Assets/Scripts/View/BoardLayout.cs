@@ -1,4 +1,5 @@
 using System;
+using Game.Core;
 using UnityEngine;
 
 namespace Game.View
@@ -55,16 +56,28 @@ namespace Game.View
     {
         private readonly Rect[] _shelves;
         private readonly BoardLayoutSettings _settings;
+        private readonly int _slotCount;
 
-        private BoardLayout(Rect[] shelves, float tileSize, int columns, int rows, Rect playfield, BoardLayoutSettings settings)
+        // Left edges of each item's touch area plus the right edge of the last one, as x offsets from the shelf's
+        // left edge. Every shelf has the same width, so one set serves them all and hit tests allocate nothing.
+        private readonly float[] _touchEdges;
+
+        private BoardLayout(Rect[] shelves, int slotCount, float tileSize, int columns, int rows, Rect playfield,
+            BoardLayoutSettings settings, float density)
         {
+            _slotCount = slotCount;
             _shelves = shelves;
             TileSize = tileSize;
             Columns = columns;
             Rows = rows;
             Playfield = playfield;
             _settings = settings;
+            Density = density;
+            _touchEdges = ComputeTouchEdges(slotCount, tileSize, settings, TargetTouchDp * density);
         }
+
+        /// <summary>Screen density the touch areas were sized for: pixels per dp (see <see cref="ScreenDensity"/>).</summary>
+        public float Density { get; }
 
         /// <summary>Side of one front-row tile, in pixels.</summary>
         public float TileSize { get; }
@@ -76,6 +89,9 @@ namespace Game.View
         public Rect Playfield { get; }
 
         public int ShelfCount => _shelves.Length;
+
+        /// <summary>Front-row slots per shelf.</summary>
+        public int SlotsPerShelf => _slotCount;
 
         /// <summary>Shelf rectangle (background) in pixels.</summary>
         public Rect GetShelfRect(int shelf) => _shelves[shelf];
@@ -100,6 +116,119 @@ namespace Game.View
             return new Rect(front.center.x - size * 0.5f, front.yMax, size, size);
         }
 
+        /// <summary>
+        /// Smallest hit target side, in screen pixels (issue #5: touch targets at least 48 px). Hit rectangles smaller
+        /// than this are grown around their centre.
+        /// </summary>
+        public const float MinTouchTargetPx = 48f;
+
+        /// <summary>
+        /// Size, in dp, each item's touch area grows towards (each dimension) by taking room from the gaps around it.
+        /// Reached wherever the gaps allow; the shelf layout itself never changes to make room.
+        /// </summary>
+        public const float TargetTouchDp = 48f;
+
+        /// <summary>
+        /// Accepted floor, in dp, for item touch areas on 720p phones with the densest (14-shelf) layout, where the
+        /// gaps cannot quite give <see cref="TargetTouchDp"/>.
+        /// </summary>
+        public const float FloorTouchDp = 44f;
+
+        /// <summary>
+        /// Where a press or drop counts as "on this shelf": the shelf rectangle grown by half the column gap on each
+        /// side and half the row gap above and below, so neighbouring shelves' hit areas meet without overlapping and
+        /// a drop in the gap still lands on the nearest shelf. At least <see cref="MinTouchTargetPx"/> each way.
+        /// </summary>
+        public Rect GetShelfHitRect(int shelf)
+        {
+            var s = _shelves[shelf];
+            float gx = _settings.ColumnGap * TileSize * 0.5f;
+            float gy = _settings.RowGap * TileSize * 0.5f;
+            return AtLeast(new Rect(s.x - gx, s.y - gy, s.width + 2f * gx, s.height + 2f * gy), MinTouchTargetPx);
+        }
+
+        /// <summary>
+        /// The touch area of the item in front slot <paramref name="slot"/>: where a press picks it up. It covers the
+        /// item's picture and extends into the gaps around it: up and down to halfway into the row gap (the full height
+        /// of the shelf hit area, so the peeking hidden tile above counts too), and sideways into the gaps between
+        /// items. Sideways it starts halfway between neighbouring pictures; an item still narrower than
+        /// <see cref="TargetTouchDp"/> then takes spare room from a wider neighbour, never past that neighbour's
+        /// picture and never leaving it below the target. Touch areas on a shelf meet without overlapping. At least
+        /// <see cref="MinTouchTargetPx"/> each way.
+        /// </summary>
+        public Rect GetSlotHitRect(int shelf, int slot)
+        {
+            var hit = GetShelfHitRect(shelf);
+            float x = _shelves[shelf].x;
+            float left = slot == 0 ? hit.xMin : x + _touchEdges[slot];
+            float right = slot == _slotCount - 1 ? hit.xMax : x + _touchEdges[slot + 1];
+            return AtLeast(new Rect(left, hit.y, right - left, hit.height), MinTouchTargetPx);
+        }
+
+        /// <summary>
+        /// Sideways edges of the item touch areas (see <see cref="GetSlotHitRect"/>), as offsets from the shelf's left
+        /// edge. Edge 0 and edge <paramref name="slotCount"/> are the shelf hit area's sides.
+        /// </summary>
+        private static float[] ComputeTouchEdges(int slotCount, float tile, BoardLayoutSettings settings, float targetPx)
+        {
+            float pad = settings.ShelfPadding * tile;
+            float halfColumnGap = settings.ColumnGap * tile * 0.5f;
+            float shelfWidth = ShelfWidthInTiles(settings, slotCount) * tile;
+
+            // Tile i spans [pad + i * (tile + pad), that + tile].
+            var edges = new float[slotCount + 1];
+            edges[0] = -halfColumnGap;
+            edges[slotCount] = shelfWidth + halfColumnGap;
+            for (int i = 1; i < slotCount; i++) edges[i] = i * (tile + pad) + pad * 0.5f;
+
+            for (int i = 0; i < slotCount; i++)
+            {
+                float need = targetPx - (edges[i + 1] - edges[i]);
+                if (need <= 0f) continue;
+
+                // How far each side may move: up to the neighbour's picture, and only by the neighbour's room above
+                // the target, so the neighbour keeps its own picture and target.
+                float leftRoom = i == 0 ? 0f
+                    : Math.Max(0f, Math.Min(edges[i] - i * (tile + pad), (edges[i] - edges[i - 1]) - targetPx));
+                float rightRoom = i == slotCount - 1 ? 0f
+                    : Math.Max(0f, Math.Min(pad + (i + 1) * (tile + pad) - edges[i + 1], (edges[i + 2] - edges[i + 1]) - targetPx));
+
+                float takeLeft = Math.Min(leftRoom, need * 0.5f);
+                float takeRight = Math.Min(rightRoom, need - takeLeft);
+                takeLeft = Math.Min(leftRoom, need - takeRight);
+                edges[i] -= takeLeft;
+                edges[i + 1] += takeRight;
+            }
+
+            return edges;
+        }
+
+        /// <summary>
+        /// The shelf and slot column under <paramref name="point"/> (pixels, same space as the layout), or
+        /// <see cref="BoardTarget.None"/>.
+        /// </summary>
+        public BoardTarget HitTest(Vector2 point)
+        {
+            for (int i = 0; i < _shelves.Length; i++)
+            {
+                if (!GetShelfHitRect(i).Contains(point)) continue;
+                int slots = _slotCount;
+                for (int slot = 0; slot < slots; slot++)
+                {
+                    if (GetSlotHitRect(i, slot).Contains(point)) return BoardTarget.At(i, slot);
+                }
+                return BoardTarget.At(i, -1);
+            }
+            return BoardTarget.None;
+        }
+
+        private static Rect AtLeast(Rect r, float min)
+        {
+            if (r.width < min) r = new Rect(r.center.x - min * 0.5f, r.y, min, r.height);
+            if (r.height < min) r = new Rect(r.x, r.center.y - min * 0.5f, r.width, min);
+            return r;
+        }
+
         /// <summary>Shelf width in tiles for the given settings.</summary>
         public static float ShelfWidthInTiles(BoardLayoutSettings s, int slotCount)
         {
@@ -120,6 +249,17 @@ namespace Game.View
         /// </summary>
         public static BoardLayout Compute(int shelfCount, int slotCount, Rect safeArea, BoardLayoutSettings settings)
         {
+            return Compute(shelfCount, slotCount, safeArea, settings, 1f);
+        }
+
+        /// <summary>
+        /// As <see cref="Compute(int,int,Rect,BoardLayoutSettings)"/>, with item touch areas sized for
+        /// <paramref name="density"/> pixels per dp (<see cref="ScreenDensity.Current"/> at runtime). Density changes
+        /// only the touch areas, never where shelves and tiles go. The overload without density uses 1 (dp = px).
+        /// </summary>
+        public static BoardLayout Compute(int shelfCount, int slotCount, Rect safeArea, BoardLayoutSettings settings, float density)
+        {
+            if (!(density > 0f)) throw new ArgumentOutOfRangeException(nameof(density));
             if (shelfCount < 1) throw new ArgumentOutOfRangeException(nameof(shelfCount));
             if (slotCount < 1) throw new ArgumentOutOfRangeException(nameof(slotCount));
             if (safeArea.width <= 0f || safeArea.height <= 0f) throw new ArgumentException("Safe area is empty.", nameof(safeArea));
@@ -171,7 +311,7 @@ namespace Game.View
                 rects[i] = new Rect(x, y, w, h);
             }
 
-            return new BoardLayout(rects, t, columns, rows, playfield, settings);
+            return new BoardLayout(rects, slotCount, t, columns, rows, playfield, settings, density);
         }
     }
 }

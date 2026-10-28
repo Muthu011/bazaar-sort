@@ -3,7 +3,7 @@
 Source of truth: the "Indian Object Sort Game: Go-Live Plan" doc. This file is the short version agents work from; update it when the plan changes.
 
 ## Core
-- Board: 6–14 shelves per level. Each shelf has 3 front slots and up to 4 layers behind.
+- Board: 4–14 shelves per level. Each shelf has 3 front slots and up to 4 layers behind.
 - Move: tap or drag a front object to any shelf with a free front slot.
 - Clear: 3 identical objects on a shelf's front row clear; the next layer slides forward.
 - Win: all objects cleared. Fail: out of moves, out of time, or no legal move left (offer continue).
@@ -32,6 +32,12 @@ Level files may only use these ids (snake_case, case-sensitive). The code copy i
 - A level must never start with a ready-made triple in a front row. This includes a shelf whose front row is empty and whose next non-empty layer is a triple, because that layer moves forward at start. The level loader rejects such levels; triples in deeper layers are fine.
 - Dropping an item back on the shelf it came from is a cancel: no move counted, no shake.
 - Shelf kinds: only `normal` is supported. The loader rejects `locked` (enabled in Slice 2) and `conveyor` (after launch) with a "not supported yet" error.
+
+### Board size and touch areas (decided by Muthu, Oct 2026)
+- The 4–14 shelf layout is fixed. Don't shrink or move shelves or items to make tap targets bigger.
+- Each item's touch area is bigger than its picture: it extends into the gaps between items and halfway into the gaps between shelves, to reach 48 dp wherever there's room.
+- 44 dp is the floor on 720p phones (the 13–14 shelf boards).
+- Levels 1 to 20 use at most 8 shelves.
 
 ## FTUE (first-time user flow)
 L1: one rule, "Match 3!", hand pointer. L2: hidden layer, no text. L3: first win, stars + coins. L5: Undo taught free. L7: designed near-loss, Extra Slot free once. L10 boss: Pongal kitchen, first album card (album UI ships in February). No interstitial before level 12 or after a fail. Notification permission asked after level 10.

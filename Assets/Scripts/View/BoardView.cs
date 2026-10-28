@@ -12,17 +12,24 @@ namespace Game.View
     ///
     /// World units are screen pixels / <see cref="PixelsPerUnit"/>: the view sets up its orthographic camera so the
     /// pixel rectangles from <see cref="BoardLayout"/> map straight to world positions.
+    ///
+    /// Input feedback (<see cref="IBoardInputView"/>): a marigold highlight behind a lifted tile for the tap
+    /// selection, the dragged tile following the pointer above everything, and the glide back / shake from
+    /// <see cref="TileMotion"/>. One tile moves at a time; starting a new one finishes the old one at once.
     /// </summary>
-    public sealed class BoardView : MonoBehaviour
+    public sealed class BoardView : MonoBehaviour, IBoardInputView
     {
         public const float PixelsPerUnit = 100f;
 
         private const int ShelfOrder = 0;
         private const int HiddenTileOrder = 1;
         private const int HiddenLabelOrder = 2;
-        private const int FrontTileOrder = 3;
-        private const int FrontLabelOrder = 4;
-        private const int StatusOrder = 10;
+        private const int HighlightOrder = 3;
+        private const int FrontTileOrder = 4;
+        private const int FrontLabelOrder = 5;
+        private const int DragTileOrder = 20;
+        private const int DragLabelOrder = 21;
+        private const int StatusOrder = 30;
         private const int LabelFontSize = 64;
         private const float LabelHeightInTile = 0.6f;
 
@@ -34,6 +41,18 @@ namespace Game.View
         private static readonly Color32 StatusColor = new Color32(0xFF, 0xF8, 0xE1, 0xFF);
         private const float HiddenDim = 0.55f;
 
+        /// <summary>Marigold: reads on the shelf brown, the dark background and every placeholder tile colour.</summary>
+        private static readonly Color32 HighlightColor = new Color32(0xFF, 0xB3, 0x00, 0xFF);
+
+        /// <summary>Highlight side as a multiple of the tile side.</summary>
+        internal const float HighlightScale = 1.22f;
+
+        /// <summary>How far the selected tile lifts, in tiles.</summary>
+        internal const float SelectedLiftTiles = 0.1f;
+
+        /// <summary>Dragged tile scale.</summary>
+        internal const float DragScale = 1.1f;
+
         private Board _board;
         private Camera _camera;
         private BoardLayoutSettings _settings;
@@ -41,6 +60,20 @@ namespace Game.View
         private ShelfVisual[] _shelves;
         private TextMesh _status;
         private Font _font;
+        private SpriteRenderer _highlight;
+
+        private int _selectedShelf = -1;
+        private int _selectedSlot = -1;
+        private int _dragShelf = -1;
+        private int _dragSlot = -1;
+
+        // The one tile gliding back or shaking, if any (-1 when none).
+        private int _motionShelf = -1;
+        private int _motionSlot = -1;
+        private Vector2 _motionFrom;
+        private float _motionElapsed;
+        private bool _motionGlide;
+        private bool _motionShake;
 
         /// <summary>The board being drawn, or null when unbound.</summary>
         public Board Board => _board;
@@ -68,6 +101,9 @@ namespace Game.View
             {
                 _shelves[i] = new ShelfVisual(transform, i, _font);
             }
+            _highlight = CreateSprite(transform, "Selection Highlight", HighlightOrder);
+            _highlight.color = HighlightColor;
+            _highlight.gameObject.SetActive(false);
             _status = CreateLabel(transform, "Status", _font, StatusOrder);
             _status.text = string.Empty;
             _status.color = TextColor(StatusColor);
@@ -101,7 +137,11 @@ namespace Game.View
             }
             _shelves = null;
             _status = null;
+            _highlight = null;
             _layout = null;
+            _selectedShelf = _selectedSlot = -1;
+            _dragShelf = _dragSlot = -1;
+            _motionShelf = _motionSlot = -1;
         }
 
         /// <summary>
@@ -120,7 +160,7 @@ namespace Game.View
             _camera.clearFlags = CameraClearFlags.SolidColor;
             _camera.backgroundColor = BackgroundColor;
 
-            _layout = BoardLayout.Compute(_board.ShelfCount, Shelf.SlotCount, safeArea, _settings);
+            _layout = BoardLayout.Compute(_board.ShelfCount, Shelf.SlotCount, safeArea, _settings, ScreenDensity.Current);
             float labelScale = _layout.TileSize * LabelHeightInTile / PixelsPerUnit * 10f / LabelFontSize;
 
             for (int i = 0; i < _shelves.Length; i++)
@@ -134,11 +174,149 @@ namespace Game.View
                 }
             }
 
+            // Every tile is back home now: drop any running motion, then re-apply the selection lift and the drag.
+            _motionShelf = _motionSlot = -1;
+            _highlight.size = Vector2.one * (_layout.TileSize * HighlightScale / PixelsPerUnit);
+            ApplySelectionVisual();
+            if (_dragShelf >= 0) SetDragOrder(_shelves[_dragShelf].Front[_dragSlot], true);
+
             // Status line sits in the HUD reserve above the playfield.
             var playfield = _layout.Playfield;
             float statusY = (playfield.yMax + safeArea.yMax) * 0.5f;
             _status.transform.position = new Vector3(playfield.center.x / PixelsPerUnit, statusY / PixelsPerUnit, 0f);
             _status.characterSize = labelScale;
+        }
+
+        // ---- Input feedback (IBoardInputView) ----
+
+        /// <summary>Highlights and lifts the tile at (<paramref name="shelf"/>, <paramref name="slot"/>).</summary>
+        public void ShowSelection(int shelf, int slot)
+        {
+            if (_board == null) return;
+            FinishMotion();
+            ClearSelection();
+            _selectedShelf = shelf;
+            _selectedSlot = slot;
+            ApplySelectionVisual();
+        }
+
+        /// <summary>Removes the highlight and puts the selected tile back down.</summary>
+        public void ClearSelection()
+        {
+            if (_board == null) return;
+            if (_selectedShelf >= 0) ResetTile(_selectedShelf, _selectedSlot);
+            _selectedShelf = _selectedSlot = -1;
+            _highlight.gameObject.SetActive(false);
+        }
+
+        /// <summary>Lifts the tile above everything and starts following <paramref name="screenPosition"/>.</summary>
+        public void BeginDrag(int shelf, int slot, Vector2 screenPosition)
+        {
+            if (_board == null) return;
+            FinishMotion();
+            ClearSelection();
+            _dragShelf = shelf;
+            _dragSlot = slot;
+            SetDragOrder(_shelves[shelf].Front[slot], true);
+            DragTo(screenPosition);
+        }
+
+        /// <summary>Moves the dragged tile's centre to <paramref name="screenPosition"/>.</summary>
+        public void DragTo(Vector2 screenPosition)
+        {
+            if (_board == null || _dragShelf < 0) return;
+            SetPixelPosition(_shelves[_dragShelf].Front[_dragSlot].Renderer.transform, screenPosition);
+        }
+
+        /// <summary>Ends the drag: reset at once when the move landed, otherwise glide home (and shake when refused).</summary>
+        public void EndDrag(int shelf, int slot, DropFeedback feedback)
+        {
+            if (_board == null || shelf < 0) return;
+            var tile = _shelves[shelf].Front[slot];
+            Vector2 from = tile.Renderer.transform.position * PixelsPerUnit;
+            _dragShelf = _dragSlot = -1;
+            SetDragOrder(tile, false);
+
+            if (feedback == DropFeedback.Landed)
+            {
+                ResetTile(shelf, slot);
+                return;
+            }
+            StartMotion(shelf, slot, from, true, feedback == DropFeedback.SnapBackWithShake);
+        }
+
+        /// <summary>Shakes a tile in place: the "not allowed" cue for a refused tap move.</summary>
+        public void Shake(int shelf, int slot)
+        {
+            if (_board == null || shelf < 0) return;
+            FinishMotion();
+            StartMotion(shelf, slot, HomePixel(shelf, slot), false, true);
+        }
+
+        private void Update()
+        {
+            if (_motionShelf < 0) return;
+
+            _motionElapsed += Time.deltaTime;
+            if (_motionElapsed >= TileMotion.Duration(_motionGlide, _motionShake))
+            {
+                FinishMotion();
+                return;
+            }
+
+            var position = TileMotion.Position(_motionFrom, HomePixel(_motionShelf, _motionSlot), _motionElapsed,
+                _motionGlide, _motionShake, TileMotion.ShakeAmplitudeTiles * _layout.TileSize);
+            SetPixelPosition(_shelves[_motionShelf].Front[_motionSlot].Renderer.transform, position);
+        }
+
+        private void StartMotion(int shelf, int slot, Vector2 from, bool glide, bool shake)
+        {
+            FinishMotion();
+            _motionShelf = shelf;
+            _motionSlot = slot;
+            _motionFrom = from;
+            _motionElapsed = 0f;
+            _motionGlide = glide;
+            _motionShake = shake;
+        }
+
+        private void FinishMotion()
+        {
+            if (_motionShelf < 0) return;
+            int shelf = _motionShelf;
+            int slot = _motionSlot;
+            _motionShelf = _motionSlot = -1;
+            ResetTile(shelf, slot);
+        }
+
+        private void ApplySelectionVisual()
+        {
+            if (_selectedShelf < 0) return;
+            var lifted = HomePixel(_selectedShelf, _selectedSlot) + new Vector2(0f, SelectedLiftTiles * _layout.TileSize);
+            SetPixelPosition(_shelves[_selectedShelf].Front[_selectedSlot].Renderer.transform, lifted);
+            SetPixelPosition(_highlight.transform, lifted);
+            _highlight.gameObject.SetActive(true);
+        }
+
+        /// <summary>Puts a front tile back at its slot, normal size and draw order.</summary>
+        private void ResetTile(int shelf, int slot)
+        {
+            var tile = _shelves[shelf].Front[slot];
+            SetDragOrder(tile, false);
+            SetPixelPosition(tile.Renderer.transform, HomePixel(shelf, slot));
+        }
+
+        private Vector2 HomePixel(int shelf, int slot) => _layout.GetFrontSlotRect(shelf, slot).center;
+
+        private static void SetDragOrder(Tile tile, bool dragging)
+        {
+            tile.SetOrder(dragging ? DragTileOrder : FrontTileOrder, dragging ? DragLabelOrder : FrontLabelOrder);
+            tile.Renderer.transform.localScale = dragging ? new Vector3(DragScale, DragScale, 1f) : Vector3.one;
+        }
+
+        private static void SetPixelPosition(Transform target, Vector2 pixels)
+        {
+            target.position = new Vector3(pixels.x / PixelsPerUnit, pixels.y / PixelsPerUnit, 0f);
         }
 
         private void OnMoved(MoveInfo info)
@@ -260,6 +438,24 @@ namespace Game.View
 
         internal Color32 GetFrontColor(int shelf, int slot) => _shelves[shelf].Front[slot].Renderer.color;
 
+        internal int SelectedShelf => _selectedShelf;
+        internal int SelectedSlot => _selectedSlot;
+        internal bool IsHighlightVisible => _highlight != null && _highlight.gameObject.activeSelf;
+        internal Vector2 HighlightPixelPosition => _highlight.transform.position * PixelsPerUnit;
+        internal bool IsDragging => _dragShelf >= 0;
+        internal bool IsTileMoving => _motionShelf >= 0;
+
+        /// <summary>True while the moving tile is shaking (a refused move), false while it only glides or is idle.</summary>
+        internal bool IsShaking => _motionShelf >= 0 && _motionShake;
+
+        /// <summary>Centre of a front tile right now, in pixels.</summary>
+        internal Vector2 GetFrontTilePixelPosition(int shelf, int slot) => _shelves[shelf].Front[slot].Renderer.transform.position * PixelsPerUnit;
+
+        /// <summary>Where a front tile rests, in pixels.</summary>
+        internal Vector2 GetFrontTileHome(int shelf, int slot) => HomePixel(shelf, slot);
+
+        internal int GetFrontSortingOrder(int shelf, int slot) => _shelves[shelf].Front[slot].Renderer.sortingOrder;
+
         /// <summary>The visuals for one shelf. Plain class: one MonoBehaviour per board, not per tile.</summary>
         private sealed class ShelfVisual
         {
@@ -291,9 +487,18 @@ namespace Game.View
             {
                 Renderer = CreateSprite(parent, name, tileOrder);
                 Label = CreateLabel(Renderer.transform, "Label", font, labelOrder);
+                _labelRenderer = Label.GetComponent<MeshRenderer>();
             }
 
+            private readonly MeshRenderer _labelRenderer;
+
             public bool IsVisible => Renderer.gameObject.activeSelf;
+
+            public void SetOrder(int tileOrder, int labelOrder)
+            {
+                Renderer.sortingOrder = tileOrder;
+                _labelRenderer.sortingOrder = labelOrder;
+            }
 
             /// <summary>Shows <paramref name="objectId"/>, or hides the tile when it is null.</summary>
             public void Show(string objectId, float brightness)
