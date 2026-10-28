@@ -10,6 +10,8 @@ namespace Game.View
     /// Thin by design: no hit testing, no rules. Rebinds itself when the view gets a new board.
     ///
     /// Positions are screen pixels; the view's camera fills the screen, so they match the layout's pixel space.
+    /// Input stays live during clear and reveal animations (they are visual only); it stops once the board is won or
+    /// stuck (<see cref="BoardView.InputLocked"/>).
     /// Update allocates nothing.
     /// </summary>
     public sealed class BoardInput : MonoBehaviour
@@ -36,6 +38,13 @@ namespace Game.View
             var board = _view.Board;
             if (board != _boundBoard) Rebind(board);
             if (_gesture == null) return;
+
+            // Won or stuck: the result panel takes the pointer, so a tap on its buttons never reaches the board.
+            if (_view.InputLocked)
+            {
+                Cancel();
+                return;
+            }
 
             var pointer = Pointer.current;
             if (pointer == null)
