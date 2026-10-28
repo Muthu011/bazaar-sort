@@ -1,0 +1,226 @@
+using System;
+using System.Collections.Generic;
+
+namespace Game.Core
+{
+    /// <summary>
+    /// The puzzle board for one level: a list of shelves and the rules for moving, clearing and revealing.
+    /// Pure C#; the view subscribes to the events below to animate.
+    ///
+    /// Rules (Slice 1):
+    /// <list type="bullet">
+    /// <item>A move takes the item in a front slot of one shelf and puts it in the leftmost free front slot of a
+    /// different shelf.</item>
+    /// <item>When <see cref="GameRules.MatchCount"/> identical items sit in a shelf's front row, they clear.</item>
+    /// <item>When a shelf's front row is empty (after a clear, or because its last item was moved away) and a hidden
+    /// layer remains, the next layer slides forward. A revealed layer that is itself a triple clears straight away,
+    /// and that can reveal the layer after it, and so on until the shelf settles.</item>
+    /// <item>Won: no items remain anywhere on the board. Stuck: items remain but no legal move exists.
+    /// Both are evaluated only once the whole move has settled (all clears and reveals done), never mid-move.</item>
+    /// </list>
+    ///
+    /// Event order for one move: Moved, then source shelf settle (LayerRevealed / Cleared ...), then target shelf
+    /// settle (Cleared, LayerRevealed, Cleared ...), then at most one of Won or Stuck.
+    /// </summary>
+    public sealed class Board
+    {
+        private readonly Shelf[] _shelves;
+        private int _itemCount;
+        private bool _wonRaised;
+        private bool _stuckRaised;
+
+        /// <summary>Raised after an item lands in its new slot.</summary>
+        public event Action<MoveInfo> Moved;
+
+        /// <summary>Raised when a triple clears from a front row.</summary>
+        public event Action<ClearInfo> Cleared;
+
+        /// <summary>Raised when a hidden layer slides into an empty front row.</summary>
+        public event Action<LayerRevealInfo> LayerRevealed;
+
+        /// <summary>Raised once, after the move that clears the last item has settled.</summary>
+        public event Action Won;
+
+        /// <summary>Raised once, after a move settles into a state with items left but no legal move.</summary>
+        public event Action Stuck;
+
+        /// <summary>
+        /// Builds a board from shelves (see <see cref="Shelf(IReadOnlyList{IReadOnlyList{string}}, string)"/> for
+        /// building a shelf from level data).
+        ///
+        /// Construction does not raise events. If a shelf starts with an empty front row and hidden layers behind,
+        /// the next non-empty layer is moved forward silently so the board starts in a settled state. A triple that
+        /// is already in a starting front row is NOT cleared; level validation should reject such levels.
+        /// </summary>
+        public Board(IEnumerable<Shelf> shelves)
+        {
+            if (shelves == null) throw new ArgumentNullException(nameof(shelves));
+
+            var list = new List<Shelf>();
+            foreach (var shelf in shelves)
+            {
+                if (shelf == null) throw new ArgumentException("Shelves must not be null.", nameof(shelves));
+                if (list.Contains(shelf)) throw new ArgumentException("A shelf instance can only be used once.", nameof(shelves));
+                list.Add(shelf);
+            }
+            if (list.Count == 0) throw new ArgumentException("A board needs at least one shelf.", nameof(shelves));
+
+            _shelves = list.ToArray();
+            for (int i = 0; i < _shelves.Length; i++)
+            {
+                while (_shelves[i].IsFrontEmpty && _shelves[i].HiddenLayerCount > 0)
+                {
+                    _shelves[i].RevealNextLayer();
+                }
+                _itemCount += _shelves[i].TotalItemCount;
+            }
+        }
+
+        /// <summary>Convenience overload.</summary>
+        public Board(params Shelf[] shelves) : this((IEnumerable<Shelf>)shelves)
+        {
+        }
+
+        /// <summary>
+        /// Builds a board straight from level data: <c>layers[shelf][layer][slot]</c>, with layer 0 the front row
+        /// and null for an empty slot (the shape of <c>shelves[].layers</c> in the level JSON).
+        /// </summary>
+        public static Board FromLayers(IReadOnlyList<IReadOnlyList<IReadOnlyList<string>>> layers)
+        {
+            if (layers == null) throw new ArgumentNullException(nameof(layers));
+            var shelves = new Shelf[layers.Count];
+            for (int i = 0; i < layers.Count; i++)
+            {
+                shelves[i] = new Shelf(layers[i]);
+            }
+            return new Board(shelves);
+        }
+
+        public int ShelfCount => _shelves.Length;
+
+        public Shelf GetShelf(int index)
+        {
+            if (index < 0 || index >= _shelves.Length) throw new ArgumentOutOfRangeException(nameof(index));
+            return _shelves[index];
+        }
+
+        /// <summary>Items left on the board, front rows and hidden layers.</summary>
+        public int ItemCount => _itemCount;
+
+        /// <summary>True when no items remain.</summary>
+        public bool IsWon => _itemCount == 0;
+
+        /// <summary>True when items remain but no legal move exists.</summary>
+        public bool IsStuck => !IsWon && !HasLegalMove();
+
+        /// <summary>
+        /// True when at least one shelf has a front item and some other shelf has a free front slot.
+        /// </summary>
+        public bool HasLegalMove()
+        {
+            for (int from = 0; from < _shelves.Length; from++)
+            {
+                if (_shelves[from].IsFrontEmpty) continue;
+                for (int to = 0; to < _shelves.Length; to++)
+                {
+                    if (to != from && _shelves[to].HasFreeFrontSlot) return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Checks a move without performing it. Rejections, in order of precedence: board already won, shelf index
+        /// out of range, slot index out of range, empty source slot, target equals source shelf, target front row
+        /// full.
+        ///
+        /// Interpretation of the issue's "same slot" rule: an item may not be moved to the shelf it is already on.
+        /// Since items always land in the leftmost free slot, a same-shelf move would at best shuffle the item
+        /// sideways, which never changes whether the shelf can clear, so it is treated as illegal.
+        /// </summary>
+        public MoveResult CanMove(int fromShelf, int fromSlot, int toShelf)
+        {
+            if (IsWon) return MoveResult.GameOver;
+            if (fromShelf < 0 || fromShelf >= _shelves.Length) return MoveResult.InvalidShelf;
+            if (toShelf < 0 || toShelf >= _shelves.Length) return MoveResult.InvalidShelf;
+            if (fromSlot < 0 || fromSlot >= Shelf.SlotCount) return MoveResult.InvalidSlot;
+            if (_shelves[fromShelf].GetFrontItem(fromSlot) == null) return MoveResult.EmptySlot;
+            if (fromShelf == toShelf) return MoveResult.SameShelf;
+            if (!_shelves[toShelf].HasFreeFrontSlot) return MoveResult.TargetFull;
+            return MoveResult.Ok;
+        }
+
+        /// <inheritdoc cref="TryMove(int,int,int,out MoveResult)"/>
+        public bool TryMove(int fromShelf, int fromSlot, int toShelf)
+        {
+            return TryMove(fromShelf, fromSlot, toShelf, out _);
+        }
+
+        /// <summary>
+        /// Moves the front item at (<paramref name="fromShelf"/>, <paramref name="fromSlot"/>) into the leftmost
+        /// free front slot of <paramref name="toShelf"/>, then resolves clears and reveals and checks for Won/Stuck.
+        /// Returns false and changes nothing when the move is illegal (see <see cref="CanMove"/>).
+        /// </summary>
+        public bool TryMove(int fromShelf, int fromSlot, int toShelf, out MoveResult result)
+        {
+            result = CanMove(fromShelf, fromSlot, toShelf);
+            if (result != MoveResult.Ok) return false;
+
+            var source = _shelves[fromShelf];
+            var target = _shelves[toShelf];
+            string item = source.GetFrontItem(fromSlot);
+            int toSlot = target.FirstFreeFrontSlot;
+
+            source.SetFrontItem(fromSlot, null);
+            target.SetFrontItem(toSlot, item);
+            Moved?.Invoke(new MoveInfo(item, fromShelf, fromSlot, toShelf, toSlot));
+
+            Settle(fromShelf);
+            Settle(toShelf);
+
+            if (IsWon)
+            {
+                if (!_wonRaised)
+                {
+                    _wonRaised = true;
+                    Won?.Invoke();
+                }
+            }
+            else if (!HasLegalMove())
+            {
+                if (!_stuckRaised)
+                {
+                    _stuckRaised = true;
+                    Stuck?.Invoke();
+                }
+            }
+
+            return true;
+        }
+
+        /// <summary>Clears triples and reveals layers on one shelf until nothing more changes.</summary>
+        private void Settle(int shelfIndex)
+        {
+            var shelf = _shelves[shelfIndex];
+            while (true)
+            {
+                string cleared = shelf.TryClearFrontMatch();
+                if (cleared != null)
+                {
+                    _itemCount -= GameRules.MatchCount;
+                    Cleared?.Invoke(new ClearInfo(shelfIndex, cleared));
+                    continue;
+                }
+
+                if (shelf.IsFrontEmpty && shelf.HiddenLayerCount > 0)
+                {
+                    shelf.RevealNextLayer();
+                    LayerRevealed?.Invoke(new LayerRevealInfo(shelfIndex, shelf.HiddenLayerCount));
+                    continue;
+                }
+
+                return;
+            }
+        }
+    }
+}
