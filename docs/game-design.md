@@ -31,6 +31,7 @@ Level files may only use these ids (snake_case, case-sensitive). The code copy i
 ### Level rules (decided 28 Oct 2026)
 - A level must never start with a ready-made triple in a front row. This includes a shelf whose front row is empty and whose next non-empty layer is a triple, because that layer moves forward at start. The level loader rejects such levels; triples in deeper layers are fine.
 - Dropping an item back on the shelf it came from is a cancel: no move counted, no shake.
+- After the last available level, show "More levels coming soon" with a Replay button that goes to L1. Next never loops back to L1 (Muthu, PR #17).
 - Shelf kinds: only `normal` is supported. The loader rejects `locked` (enabled in Slice 2) and `conveyor` (after launch) with a "not supported yet" error.
 
 ### Board size and touch areas (decided by Muthu, Oct 2026)
