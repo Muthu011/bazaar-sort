@@ -27,7 +27,7 @@ namespace Game.EditorTools
         public static void BuildDevApkMenu()
         {
             var report = BuildDevApk();
-            if (report != null && report.summary.result == BuildResult.Succeeded)
+            if (report != null && report.summary.result == BuildResult.Succeeded && File.Exists(OutputPath))
             {
                 EditorUtility.RevealInFinder(OutputPath);
             }
@@ -61,6 +61,7 @@ namespace Game.EditorTools
             }
 
             Directory.CreateDirectory(Path.GetDirectoryName(OutputPath));
+            if (File.Exists(OutputPath)) File.Delete(OutputPath); // never report a stale APK
             bool wasAppBundle = EditorUserBuildSettings.buildAppBundle;
             EditorUserBuildSettings.buildAppBundle = false; // an .apk for adb install, not an .aab
 
@@ -92,13 +93,16 @@ namespace Game.EditorTools
                 $"{summary.totalWarnings} warnings, backend {PlayerSettings.GetScriptingBackend(NamedBuildTarget.Android)}, " +
                 $"output {Path.GetFullPath(OutputPath)}";
 
-            if (summary.result == BuildResult.Succeeded)
+            // A "Succeeded" report without an APK happens when the Android module was installed while the editor
+            // was open (its build extension is not loaded until restart), so the file is the real check.
+            if (summary.result == BuildResult.Succeeded && bytes > 0)
             {
                 Debug.Log(line);
             }
             else
             {
-                Fail(line);
+                Fail(bytes > 0 ? line : line + " -- no APK was written. If Android Build Support was installed while " +
+                    "this editor was open, restart Unity and build again.");
             }
             return report;
         }
