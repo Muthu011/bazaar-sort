@@ -11,15 +11,19 @@ namespace Game.Levels
     /// Rules checked:
     /// <list type="bullet">
     /// <item><c>schema</c> is 1, <c>id</c> is set, and <c>shelves</c> is present and not empty.</item>
-    /// <item>Every shelf is <c>normal</c> (locked and conveyor shelves are rejected as not supported yet) and has
-    /// at least a front row, and every layer has exactly
-    /// <see cref="Shelf.SlotCount"/> slots.</item>
+    /// <item>Every shelf is <c>normal</c> or <c>locked</c> (conveyor shelves are rejected as not supported yet) and
+    /// has at least a front row, and every layer has exactly <see cref="Shelf.SlotCount"/> slots.</item>
+    /// <item>A locked shelf has <c>lockClears</c> of at least 1; any other shelf has it absent or 0.</item>
+    /// <item>A locked shelf can open: its <c>lockClears</c> is no more than the clears the items on the other shelves
+    /// could ever make (their item count / 3). A cheap upper bound only; whether the level is really solvable is the
+    /// solver's job.</item>
     /// <item>Every object id is in <see cref="ObjectCatalog"/>.</item>
     /// <item>Every object id appears a multiple of <see cref="GameRules.MatchCount"/> times across the level.</item>
-    /// <item>At least one front slot is empty at start.</item>
+    /// <item>At least one front slot on an open (not locked) shelf is empty at start: locked shelves take no moves.</item>
     /// <item>No shelf starts with a ready-made triple in its front row. This includes a shelf whose front row is
     /// empty: the board moves the first non-empty layer behind it forward when it is built, so that layer is the
-    /// real starting front row. Triples deeper in hidden layers are fine; they clear when revealed.</item>
+    /// real starting front row. Triples deeper in hidden layers are fine; they clear when revealed. Locked shelves
+    /// follow the same rule: a starting triple there would clear the moment the shelf opens.</item>
     /// </list>
     ///
     /// "At start" means the board as <see cref="Board"/> builds it, i.e. after empty front rows are filled from behind.
@@ -69,17 +73,22 @@ namespace Game.Levels
             var counts = new Dictionary<string, int>(StringComparer.Ordinal);
             var countOrder = new List<string>();
             int emptyFrontSlots = 0;
+            int emptyLockedFrontSlots = 0;
             bool allFrontsKnown = true;
 
             for (int s = 0; s < level.Shelves.Count; s++)
             {
                 var shelf = level.Shelves[s];
                 CheckShelf(levelId, shelf, s, errors, counts, countOrder);
+                CheckLockClears(levelId, shelf, s, errors);
 
                 int empty = CheckStartingFront(levelId, shelf, s, errors);
                 if (empty < 0) allFrontsKnown = false;
+                else if (IsLocked(shelf)) emptyLockedFrontSlots += empty;
                 else emptyFrontSlots += empty;
             }
+
+            CheckLocksCanOpen(levelId, level.Shelves, errors);
 
             // Objects used by Set Trays are exempt from the multiple-of-3 rule; the schema says they must match their
             // tray sets exactly instead. Trays aren't built yet, so that tray-specific count is not checked here: tray
@@ -113,8 +122,10 @@ namespace Game.Levels
             // reject the level. Otherwise the free slots found so far are a lower bound, so only report when certain.
             if (allFrontsKnown && emptyFrontSlots == 0)
             {
-                errors.Add(new LevelError(LevelErrorCode.NoEmptyFrontSlot, levelId,
-                    "no empty front slot at start; at least one front slot must be empty so the first move is possible"));
+                string detail = emptyLockedFrontSlots == 0
+                    ? "no empty front slot at start; at least one front slot must be empty so the first move is possible"
+                    : "no empty front slot on an open shelf at start; locked shelves take no moves, so an open shelf needs a free front slot for the first move";
+                errors.Add(new LevelError(LevelErrorCode.NoEmptyFrontSlot, levelId, detail));
             }
 
             return errors;
@@ -131,9 +142,9 @@ namespace Game.Levels
             }
             else if (shelf != null && !ShelfKinds.IsSupported(shelf.Kind))
             {
-                string when = shelf.Kind == ShelfKinds.Locked ? "locked shelves arrive in Slice 2" : "conveyor shelves come after launch";
                 errors.Add(new LevelError(LevelErrorCode.UnsupportedShelfKind, levelId,
-                    $"shelf kind \"{shelf.Kind}\" is not supported yet ({when}); use \"normal\"", index, shelf.Id));
+                    $"shelf kind \"{shelf.Kind}\" is not supported yet (conveyor shelves come after launch); use \"normal\"",
+                    index, shelf.Id));
             }
 
             if (shelf?.Layers == null || shelf.Layers.Count == 0)
@@ -233,6 +244,69 @@ namespace Game.Levels
             }
 
             return empty;
+        }
+
+        private static bool IsLocked(ShelfData shelf) => shelf != null && shelf.Kind == ShelfKinds.Locked;
+
+        /// <summary>Locked shelves need lockClears of at least 1; every other shelf has it absent or 0.</summary>
+        private static void CheckLockClears(string levelId, ShelfData shelf, int index, List<LevelError> errors)
+        {
+            if (shelf == null) return;
+            if (IsLocked(shelf))
+            {
+                if (shelf.LockClears < 1)
+                {
+                    errors.Add(new LevelError(LevelErrorCode.InvalidLockClears, levelId,
+                        $"locked shelf has lockClears {shelf.LockClears}; it must be at least 1", index, shelf.Id));
+                }
+            }
+            else if (shelf.LockClears != 0)
+            {
+                errors.Add(new LevelError(LevelErrorCode.InvalidLockClears, levelId,
+                    $"lockClears is {shelf.LockClears} but the shelf is not locked; leave it out or set it to 0",
+                    index, shelf.Id));
+            }
+        }
+
+        /// <summary>
+        /// Every clear counts every lock down by one, and a locked shelf's own items can't clear before it opens, so it
+        /// opens at the latest after (items on the other shelves) / 3 clears. A lock that needs more never opens and the
+        /// level can't be won. This is a cheap bound, not a solve: a lock within it may still be unreachable in play
+        /// (the solver, issue #20, catches that).
+        /// </summary>
+        private static void CheckLocksCanOpen(string levelId, List<ShelfData> shelves, List<LevelError> errors)
+        {
+            int total = 0;
+            for (int s = 0; s < shelves.Count; s++) total += CountItems(shelves[s]);
+
+            for (int s = 0; s < shelves.Count; s++)
+            {
+                var shelf = shelves[s];
+                if (!IsLocked(shelf) || shelf.LockClears < 1) continue;
+                int possible = (total - CountItems(shelf)) / GameRules.MatchCount;
+                if (shelf.LockClears > possible)
+                {
+                    errors.Add(new LevelError(LevelErrorCode.LockNeverOpens, levelId,
+                        $"locked shelf needs {shelf.LockClears} clears but the other shelves hold only enough items for {possible}; it would never open",
+                        s, shelf.Id));
+                }
+            }
+        }
+
+        /// <summary>Items (any non-empty slot) on a shelf, all layers.</summary>
+        private static int CountItems(ShelfData shelf)
+        {
+            if (shelf?.Layers == null) return 0;
+            int count = 0;
+            foreach (var layer in shelf.Layers)
+            {
+                if (layer == null) continue;
+                foreach (var id in layer)
+                {
+                    if (!string.IsNullOrEmpty(id)) count++;
+                }
+            }
+            return count;
         }
 
         private static bool IsEmptyLayer(List<string> slots)

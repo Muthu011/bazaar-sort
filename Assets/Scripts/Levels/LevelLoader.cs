@@ -64,7 +64,7 @@ namespace Game.Levels
 
         /// <summary>
         /// Builds the board from data that passed <see cref="LevelValidator"/>. Same result as
-        /// <see cref="Board.FromLayers"/>, but keeps the shelf ids from the file.
+        /// <see cref="Board.FromLayers"/>, but keeps the shelf ids from the file and builds locked shelves.
         /// </summary>
         private static Board Build(LevelData level)
         {
@@ -72,7 +72,8 @@ namespace Game.Levels
             for (int i = 0; i < shelves.Length; i++)
             {
                 var data = level.Shelves[i];
-                shelves[i] = new Shelf(data.Layers, data.Id);
+                int lockClears = data.Kind == ShelfKinds.Locked ? data.LockClears : 0;
+                shelves[i] = new Shelf(data.Layers, data.Id, lockClears);
             }
             return new Board(shelves);
         }

@@ -19,7 +19,7 @@ namespace Game.Levels
         MissingLayers,
         /// <summary>A shelf's <c>kind</c> is not normal, locked or conveyor.</summary>
         UnknownShelfKind,
-        /// <summary>A shelf's <c>kind</c> is in the schema but not built yet (locked, conveyor).</summary>
+        /// <summary>A shelf's <c>kind</c> is in the schema but not built yet (conveyor).</summary>
         UnsupportedShelfKind,
         /// <summary>A layer does not have exactly <see cref="Game.Core.Shelf.SlotCount"/> slots.</summary>
         WrongSlotCount,
@@ -31,6 +31,15 @@ namespace Game.Levels
         NoEmptyFrontSlot,
         /// <summary>A shelf's starting front row is already a triple.</summary>
         StartingTriple,
+        /// <summary>
+        /// <c>lockClears</c> is below 1 on a locked shelf, or set (not 0) on a shelf that isn't locked.
+        /// </summary>
+        InvalidLockClears,
+        /// <summary>
+        /// A locked shelf needs more clears than the rest of the board can ever make, so it never opens and the level
+        /// can't be won.
+        /// </summary>
+        LockNeverOpens,
     }
 
     /// <summary>

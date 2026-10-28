@@ -32,7 +32,21 @@ Level files may only use these ids (snake_case, case-sensitive). The code copy i
 - A level must never start with a ready-made triple in a front row. This includes a shelf whose front row is empty and whose next non-empty layer is a triple, because that layer moves forward at start. The level loader rejects such levels; triples in deeper layers are fine.
 - Dropping an item back on the shelf it came from is a cancel: no move counted, no shake.
 - After the last available level, show "More levels coming soon" with a Replay button that goes to L1. Next never loops back to L1 (Muthu, PR #17).
-- Shelf kinds: only `normal` is supported. The loader rejects `locked` (enabled in Slice 2) and `conveyor` (after launch) with a "not supported yet" error.
+- Shelf kinds: `normal` and `locked` are supported. The loader rejects `conveyor` (after launch) with a "not supported yet" error.
+
+### Locked shelf (issue #19)
+- A locked shelf takes no moves. You can't pick up its items or drop anything on it. Its items stay visible.
+- Every triple clear anywhere on the board counts every locked shelf down by 1. A clear on a neighbouring shelf counts the same as any other. Chained clears (a revealed layer that clears) count once each.
+- When the count reaches 0 the shelf opens and plays like a normal shelf from then on. Core raises `ShelfUnlocked(shelfIndex)` once, right after the clear that opened it.
+- A locked shelf may hold hidden layers. They stay put while it is locked.
+- `lockClears` must be 1 or more on a locked shelf, and absent or 0 on every other shelf.
+- A locked shelf may not start with a triple in its front row (same rule as every shelf). It would clear the moment it opens.
+- At least one empty front slot must be on an open shelf at the start. Free slots on locked shelves don't count.
+- The loader rejects a lock that can never open: `lockClears` larger than (items on the other shelves) / 3. Deeper "can this lock be reached in play" checks are left to the solver (#20).
+- Stuck: no legal move between open shelves. With no move, no clear can happen, so no lock can open: Stuck is final. Stuck never fires while a legal move exists, and a clear that opens a shelf with room counts before Stuck is checked.
+- Win: every item cleared, including those on locked shelves.
+- Tapping a locked item, or dropping onto a locked shelf, gives the normal invalid-move shake.
+- Placeholder look: dark scrim over the shelf and a brass padlock on its top-right corner showing the clears left. The number bumps on each clear; the padlock grows and fades out when the shelf opens.
 
 ### Board size and touch areas (decided by Muthu, Oct 2026)
 - The 4–14 shelf layout is fixed. Don't shrink or move shelves or items to make tap targets bigger.

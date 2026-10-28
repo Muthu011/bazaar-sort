@@ -49,7 +49,9 @@ namespace Game.Levels
         /// <summary>normal | locked | conveyor (see <see cref="ShelfKinds"/>). A missing kind reads as normal.</summary>
         public string Kind { get; set; } = ShelfKinds.Normal;
 
-        /// <summary>Locked shelves: clears needed to open.</summary>
+        /// <summary>
+        /// Locked shelves: board clears needed to open (at least 1). Must be 0 or absent for every other kind.
+        /// </summary>
         public int LockClears { get; set; }
 
         /// <summary>Layers front-to-back: <c>Layers[0]</c> is the front row; null is an empty slot.</summary>
@@ -76,12 +78,11 @@ namespace Game.Levels
         }
 
         /// <summary>
-        /// True for kinds the board can build today. Only normal shelves for now: locked shelves arrive in Slice 2,
-        /// conveyor shelves after launch.
+        /// True for kinds the board can build today: normal and locked (issue #19). Conveyor shelves come after launch.
         /// </summary>
         public static bool IsSupported(string kind)
         {
-            return kind == Normal;
+            return kind == Normal || kind == Locked;
         }
     }
 }

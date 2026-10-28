@@ -19,6 +19,10 @@ namespace Game.Core
         TargetFull,
         /// <summary>The board is already won.</summary>
         GameOver,
+        /// <summary>The source shelf is locked: its items can't be picked up until it opens.</summary>
+        SourceLocked,
+        /// <summary>The target shelf is locked: nothing can be put on it until it opens.</summary>
+        TargetLocked,
     }
 
     /// <summary>An item moved from one front slot to another. Raised before any clear it causes.</summary>

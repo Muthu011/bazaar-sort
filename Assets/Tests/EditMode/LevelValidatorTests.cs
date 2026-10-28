@@ -336,15 +336,125 @@ namespace Game.Tests.EditMode
                 "t_level: shelf 2 (\"s3\"): unknown shelf kind \"magic\"; expected normal, locked or conveyor", error.Message);
         }
 
+        // ---------- Locked shelves (issue #19) ----------
+
+        private static string LockedShelf(string id, string lockClears, params string[] layers)
+        {
+            string clears = lockClears == null ? string.Empty : $"\"lockClears\": {lockClears}, ";
+            return $"{{ \"id\": \"{id}\", \"kind\": \"locked\", {clears}\"layers\": [ {string.Join(", ", layers)} ] }}";
+        }
+
         [Test]
-        public void Validate_LockedShelf_IsNotSupportedYet()
+        public void Validate_LockedShelf_IsAccepted()
+        {
+            var errors = ValidateShelves(ValidShelves + ", " + LockedShelf("s3", "1", "[null, null, null]"));
+            CollectionAssert.IsEmpty(errors.Select(e => e.Message));
+        }
+
+        [Test]
+        public void Validate_LockedShelfWithItemsAndHiddenLayers_IsAccepted()
+        {
+            // Two clears possible off the locked shelf (tumbler, tawa), so lockClears 2 can open.
+            var errors = ValidateShelves(
+                Shelf("s1", "[\"tumbler\", \"tumbler\", null]") + ", " +
+                Shelf("s2", "[\"tawa\", \"tumbler\", \"idli_stand\"]") + ", " +
+                Shelf("s3", "[\"tawa\", \"tawa\", null]") + ", " +
+                LockedShelf("s4", "2", "[\"idli_stand\", \"idli_stand\", null]", "[\"tawa\", \"tawa\", \"tawa\"]"));
+            CollectionAssert.IsEmpty(errors.Select(e => e.Message));
+        }
+
+        [Test]
+        public void Validate_LockedShelfWithZeroLockClears_IsError()
+        {
+            var error = ValidateShelves(ValidShelves + ", " + LockedShelf("s3", "0", "[null, null, null]")).Single();
+            Assert.AreEqual(LevelErrorCode.InvalidLockClears, error.Code);
+            Assert.AreEqual("t_level: shelf 2 (\"s3\"): locked shelf has lockClears 0; it must be at least 1", error.Message);
+        }
+
+        [Test]
+        public void Validate_LockedShelfWithoutLockClears_IsError()
+        {
+            var error = ValidateShelves(ValidShelves + ", " + LockedShelf("s3", null, "[null, null, null]")).Single();
+            Assert.AreEqual(LevelErrorCode.InvalidLockClears, error.Code);
+        }
+
+        [Test]
+        public void Validate_LockedShelfWithNegativeLockClears_IsError()
+        {
+            var error = ValidateShelves(ValidShelves + ", " + LockedShelf("s3", "-2", "[null, null, null]")).Single();
+            Assert.AreEqual(LevelErrorCode.InvalidLockClears, error.Code);
+            Assert.AreEqual("t_level: shelf 2 (\"s3\"): locked shelf has lockClears -2; it must be at least 1", error.Message);
+        }
+
+        [Test]
+        public void Validate_NormalShelfWithLockClears_IsError()
+        {
+            var error = ValidateShelves(ValidShelves +
+                ", { \"id\": \"s3\", \"kind\": \"normal\", \"lockClears\": 2, \"layers\": [[null, null, null]] }").Single();
+            Assert.AreEqual(LevelErrorCode.InvalidLockClears, error.Code);
+            Assert.AreEqual(
+                "t_level: shelf 2 (\"s3\"): lockClears is 2 but the shelf is not locked; leave it out or set it to 0", error.Message);
+        }
+
+        [Test]
+        public void Validate_NormalShelfWithZeroLockClears_IsAccepted()
+        {
+            var errors = ValidateShelves(ValidShelves +
+                ", { \"id\": \"s3\", \"kind\": \"normal\", \"lockClears\": 0, \"layers\": [[null, null, null]] }");
+            CollectionAssert.IsEmpty(errors);
+        }
+
+        [Test]
+        public void Validate_LockedShelfStartingTriple_IsError()
+        {
+            // It would clear the moment the shelf opens; rejected like any starting triple.
+            var errors = ValidateShelves(ValidShelves + ", " +
+                LockedShelf("s3", "1", "[\"tawa\", \"tawa\", \"tawa\"]"));
+            var error = errors.Single();
+            Assert.AreEqual(LevelErrorCode.StartingTriple, error.Code);
+            Assert.AreEqual(2, error.ShelfIndex);
+        }
+
+        [Test]
+        public void Validate_LockedShelfStartingTripleBehindEmptyFront_IsError()
+        {
+            var errors = ValidateShelves(ValidShelves + ", " +
+                LockedShelf("s3", "1", "[null, null, null]", "[\"tawa\", \"tawa\", \"tawa\"]"));
+            CollectionAssert.AreEqual(new[] { LevelErrorCode.StartingTriple }, Codes(errors));
+        }
+
+        [Test]
+        public void Validate_LockThatCanNeverOpen_IsError()
+        {
+            // Only three items off the lock: one clear at most, but it needs two.
+            var errors = ValidateShelves(ValidShelves + ", " + LockedShelf("s3", "2", "[\"tawa\", \"tawa\", null]") +
+                ", " + Shelf("s4", "[\"tawa\", null, null]"));
+            var error = errors.Single();
+            Assert.AreEqual(LevelErrorCode.LockNeverOpens, error.Code);
+            Assert.AreEqual(
+                "t_level: shelf 2 (\"s3\"): locked shelf needs 2 clears but the other shelves hold only enough items for 1; it would never open",
+                error.Message);
+        }
+
+        [Test]
+        public void Validate_LockAtExactlyTheBound_IsAccepted()
+        {
+            var errors = ValidateShelves(ValidShelves + ", " + LockedShelf("s3", "1", "[\"tawa\", \"tawa\", null]") +
+                ", " + Shelf("s4", "[\"tawa\", null, null]"));
+            CollectionAssert.IsEmpty(errors);
+        }
+
+        [Test]
+        public void Validate_OnlyFreeSlotsOnLockedShelves_IsError()
         {
             var errors = ValidateShelves(
-                ValidShelves + ", { \"id\": \"s3\", \"kind\": \"locked\", \"lockClears\": 2, \"layers\": [[null, null, null]] }");
+                Shelf("s1", "[\"tumbler\", \"tumbler\", \"tawa\"]") + ", " +
+                Shelf("s2", "[\"tawa\", \"tumbler\", \"tawa\"]") + ", " +
+                LockedShelf("s3", "1", "[null, null, null]"));
             var error = errors.Single();
-            Assert.AreEqual(LevelErrorCode.UnsupportedShelfKind, error.Code);
+            Assert.AreEqual(LevelErrorCode.NoEmptyFrontSlot, error.Code);
             Assert.AreEqual(
-                "t_level: shelf 2 (\"s3\"): shelf kind \"locked\" is not supported yet (locked shelves arrive in Slice 2); use \"normal\"",
+                "t_level: no empty front slot on an open shelf at start; locked shelves take no moves, so an open shelf needs a free front slot for the first move",
                 error.Message);
         }
 

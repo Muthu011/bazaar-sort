@@ -20,8 +20,25 @@ namespace Game.Core
     /// Both are evaluated only once the whole move has settled (all clears and reveals done), never mid-move.</item>
     /// </list>
     ///
+    /// Locked shelves (issue #19):
+    /// <list type="bullet">
+    /// <item>A locked shelf takes no moves in or out: its items can't be picked up (<see cref="MoveResult.SourceLocked"/>)
+    /// and nothing can be dropped on it (<see cref="MoveResult.TargetLocked"/>). Its items stay on show.</item>
+    /// <item>Every triple clear anywhere on the board, including chained clears after a reveal, counts every locked
+    /// shelf down by one. The count is board-wide: a clear on a neighbouring shelf counts the same as any other.</item>
+    /// <item>When a shelf's count reaches 0 it opens, <see cref="ShelfUnlocked"/> is raised once for it, and it acts
+    /// like a normal shelf from then on.</item>
+    /// <item>While locked, a shelf's contents never change (no move reaches it, so it can't clear or reveal). Its
+    /// starting front row is never a triple (the loader rejects that, as for every shelf), so opening never clears
+    /// anything by itself.</item>
+    /// <item>Locked shelves never offer a legal move, so Stuck counts only open shelves. With no legal move no clear can
+    /// happen, so no lock can open either: Stuck is final. Won still needs every item cleared, locked ones included.</item>
+    /// </list>
+    ///
     /// Event order for one move: Moved, then source shelf settle (LayerRevealed / Cleared ...), then target shelf
-    /// settle (Cleared, LayerRevealed, Cleared ...), then at most one of Won or Stuck.
+    /// settle (Cleared, LayerRevealed, Cleared ...), then at most one of Won or Stuck. Each Cleared is raised after the
+    /// lock counts have taken that clear into account, and is followed straight away by ShelfUnlocked for every shelf it
+    /// opened, in shelf order.
     /// </summary>
     public sealed class Board
     {
@@ -30,11 +47,21 @@ namespace Game.Core
         private bool _wonRaised;
         private bool _stuckRaised;
 
+        // Shelves opened by the latest clear, waiting for their ShelfUnlocked event. A clear can open several shelves.
+        private int _pendingUnlocks;
+        private readonly bool[] _justOpened;
+
         /// <summary>Raised after an item lands in its new slot.</summary>
         public event Action<MoveInfo> Moved;
 
         /// <summary>Raised when a triple clears from a front row.</summary>
         public event Action<ClearInfo> Cleared;
+
+        /// <summary>
+        /// Raised once per locked shelf, with its index, right after the Cleared that brings its count to 0. The shelf
+        /// is open (takes moves) from then on.
+        /// </summary>
+        public event Action<int> ShelfUnlocked;
 
         /// <summary>Raised when a hidden layer slides into an empty front row.</summary>
         public event Action<LayerRevealInfo> LayerRevealed;
@@ -70,6 +97,7 @@ namespace Game.Core
             if (list.Count == 0) throw new ArgumentException("A board needs at least one shelf.", nameof(shelves));
 
             _shelves = list.ToArray();
+            _justOpened = new bool[_shelves.Length];
             for (int i = 0; i < _shelves.Length; i++)
             {
                 while (_shelves[i].IsFrontEmpty && _shelves[i].HiddenLayerCount > 0)
@@ -133,25 +161,41 @@ namespace Game.Core
         public bool IsStuck => !IsWon && !HasLegalMove();
 
         /// <summary>
-        /// True when at least one shelf has a front item and some other shelf has a free front slot.
+        /// True when at least one open (not locked) shelf has a front item and some other open shelf has a free front
+        /// slot.
         /// </summary>
         public bool HasLegalMove()
         {
             for (int from = 0; from < _shelves.Length; from++)
             {
-                if (_shelves[from].IsFrontEmpty) continue;
+                if (_shelves[from].IsLocked || _shelves[from].IsFrontEmpty) continue;
                 for (int to = 0; to < _shelves.Length; to++)
                 {
-                    if (to != from && _shelves[to].HasFreeFrontSlot) return true;
+                    if (to != from && !_shelves[to].IsLocked && _shelves[to].HasFreeFrontSlot) return true;
                 }
             }
             return false;
         }
 
         /// <summary>
+        /// Checks whether the front item at (<paramref name="shelf"/>, <paramref name="slot"/>) may be picked up to
+        /// start a move. Rejections, in order: board already won, shelf out of range, slot out of range, empty slot,
+        /// shelf locked. The input layer asks this before selecting or dragging, so it never adds rules of its own.
+        /// </summary>
+        public MoveResult CanPick(int shelf, int slot)
+        {
+            if (IsWon) return MoveResult.GameOver;
+            if (shelf < 0 || shelf >= _shelves.Length) return MoveResult.InvalidShelf;
+            if (slot < 0 || slot >= Shelf.SlotCount) return MoveResult.InvalidSlot;
+            if (_shelves[shelf].GetFrontItem(slot) == null) return MoveResult.EmptySlot;
+            if (_shelves[shelf].IsLocked) return MoveResult.SourceLocked;
+            return MoveResult.Ok;
+        }
+
+        /// <summary>
         /// Checks a move without performing it. Rejections, in order of precedence: board already won, shelf index
-        /// out of range, slot index out of range, empty source slot, target equals source shelf, target front row
-        /// full.
+        /// out of range, slot index out of range, empty source slot, source shelf locked, target equals source shelf,
+        /// target shelf locked, target front row full.
         ///
         /// The issue's "same slot" rule: an item may not be moved to the shelf it is already on. Any three identical
         /// items on a shelf clear wherever they sit, so such a move would be a no-op. <see cref="MoveResult.SameShelf"/>
@@ -165,7 +209,9 @@ namespace Game.Core
             if (toShelf < 0 || toShelf >= _shelves.Length) return MoveResult.InvalidShelf;
             if (fromSlot < 0 || fromSlot >= Shelf.SlotCount) return MoveResult.InvalidSlot;
             if (_shelves[fromShelf].GetFrontItem(fromSlot) == null) return MoveResult.EmptySlot;
+            if (_shelves[fromShelf].IsLocked) return MoveResult.SourceLocked;
             if (fromShelf == toShelf) return MoveResult.SameShelf;
+            if (_shelves[toShelf].IsLocked) return MoveResult.TargetLocked;
             if (!_shelves[toShelf].HasFreeFrontSlot) return MoveResult.TargetFull;
             return MoveResult.Ok;
         }
@@ -233,6 +279,30 @@ namespace Game.Core
             }
         }
 
+        /// <summary>Counts one clear against every locked shelf and remembers which ones it opened.</summary>
+        private void CountDownLocks()
+        {
+            for (int i = 0; i < _shelves.Length; i++)
+            {
+                if (!_shelves[i].CountDownLock()) continue;
+                _justOpened[i] = true;
+                _pendingUnlocks++;
+            }
+        }
+
+        /// <summary>Raises ShelfUnlocked for the shelves the latest clear opened, in shelf order.</summary>
+        private void RaiseUnlocks()
+        {
+            if (_pendingUnlocks == 0) return;
+            for (int i = 0; i < _shelves.Length; i++)
+            {
+                if (!_justOpened[i]) continue;
+                _justOpened[i] = false;
+                _pendingUnlocks--;
+                ShelfUnlocked?.Invoke(i);
+            }
+        }
+
         /// <summary>Clears triples and reveals layers on one shelf until nothing more changes.</summary>
         private void Settle(int shelfIndex)
         {
@@ -243,7 +313,9 @@ namespace Game.Core
                 if (cleared != null)
                 {
                     _itemCount -= GameRules.MatchCount;
+                    CountDownLocks();
                     Cleared?.Invoke(new ClearInfo(shelfIndex, cleared));
+                    RaiseUnlocks();
                     continue;
                 }
 

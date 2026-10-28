@@ -102,6 +102,45 @@ namespace Game.Tests.EditMode
             Assert.AreEqual("tumbler", board.GetShelf(2).GetFrontItem(0));
         }
 
+        [Test]
+        public void Load_LockedSample_BuildsLockedShelf()
+        {
+            var result = LoadSample("valid_locked");
+
+            CollectionAssert.IsEmpty(result.Errors.Select(e => e.Message));
+            var board = result.Board;
+            Assert.IsFalse(board.GetShelf(0).IsLocked);
+            Assert.IsFalse(board.GetShelf(1).IsLocked, "No lockClears and kind normal: open.");
+            var locked = board.GetShelf(3);
+            Assert.AreEqual("s4", locked.Id);
+            Assert.IsTrue(locked.IsLocked);
+            Assert.AreEqual(2, locked.LockClears);
+            Assert.AreEqual(1, locked.HiddenLayerCount);
+            Assert.AreEqual(MoveResult.TargetLocked, board.CanMove(1, 1, 3));
+        }
+
+        [Test]
+        public void Load_LockedSample_PlaysThroughToWin()
+        {
+            var board = LoadSample("valid_locked").Board;
+            Assert.IsTrue(board.TryMove(1, 2, 0));   // tumbler: clear 1
+            Assert.IsTrue(board.GetShelf(3).IsLocked);
+            Assert.IsTrue(board.TryMove(1, 0, 2));   // tawa: clear 2 opens s4
+            Assert.IsFalse(board.GetShelf(3).IsLocked);
+            Assert.IsTrue(board.TryMove(1, 1, 3));   // idli stand onto s4: clears, reveals the dabba triple, clears
+            Assert.IsTrue(board.IsWon);
+        }
+
+        [Test]
+        public void Load_ConveyorShelf_IsRejectedAsNotSupportedYet()
+        {
+            string json = File.ReadAllText($"{SampleDir}/valid_locked.json").Replace("\"locked\"", "\"conveyor\"")
+                .Replace("\"lockClears\": 2", "\"lockClears\": 0");
+            var result = LevelLoader.Load(json, "conveyor.json");
+            AssertSingleError(result, LevelErrorCode.UnsupportedShelfKind,
+                "sample_valid_locked: shelf 3 (\"s4\"): shelf kind \"conveyor\" is not supported yet (conveyor shelves come after launch); use \"normal\"");
+        }
+
         // ---------- Invalid samples (issue #3 acceptance criteria) ----------
 
         [Test]
