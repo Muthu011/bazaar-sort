@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "id": "sample_valid_locked",
+  "world": 1,
+  "index": 1,
+  "role": "medium",
+  "moveLimit": null,
+  "timeLimitSec": null,
+  "shelves": [
+    { "id": "s1", "kind": "normal", "lockClears": 0, "layers": [["tumbler", "tumbler", null]] },
+    { "id": "s2", "kind": "normal", "layers": [["tawa", "idli_stand", "tumbler"]] },
+    { "id": "s3", "kind": "normal", "lockClears": 0, "layers": [["tawa", "tawa", null]] },
+    { "id": "s4", "kind": "locked", "lockClears": 2, "layers": [
+      ["idli_stand", "idli_stand", null],
+      ["masala_dabba", "masala_dabba", "masala_dabba"]
+    ] }
+  ],
+  "trays": [],
+  "wrapped": []
+}
