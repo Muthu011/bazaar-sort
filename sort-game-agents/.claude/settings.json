@@ -1,0 +1,31 @@
+{
+  "permissions": {
+    "allow": [
+      "Read", "Edit", "Write", "Glob", "Grep",
+      "mcp__unityMCP__*",
+      "Bash(git status*)", "Bash(git diff*)", "Bash(git log*)", "Bash(git fetch*)",
+      "Bash(git switch*)", "Bash(git checkout -b*)", "Bash(git add*)", "Bash(git commit*)",
+      "Bash(git push -u origin task/*)", "Bash(git push origin task/*)", "Bash(git pull*)",
+      "Bash(gh issue *)", "Bash(gh pr create*)", "Bash(gh pr view*)", "Bash(gh pr list*)",
+      "Bash(gh pr comment*)", "Bash(gh pr edit*)", "Bash(gh label list*)", "Bash(gh run *)",
+      "Bash(python3 tools/*)", "Bash(python tools/*)",
+      "Bash(ls*)", "Bash(cat*)", "Bash(mkdir*)", "Bash(date*)", "Bash(test *)"
+    ],
+    "deny": [
+      "Bash(git push origin main*)", "Bash(git push --force*)", "Bash(git push -f*)",
+      "Bash(git reset --hard*)", "Bash(gh pr merge*)", "Bash(gh release*)", "Bash(gh secret*)",
+      "Bash(rm -rf*)", "Bash(curl*)", "Bash(wget*)",
+      "Read(**/*.keystore)", "Read(**/*.jks)", "Read(**/secrets/**)", "Read(**/*.p12)", "Read(**/.env*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          { "type": "command", "command": "test ! -f STOP || { echo 'STOP file present: stop all work now.' >&2; exit 2; }" }
+        ]
+      }
+    ]
+  }
+}

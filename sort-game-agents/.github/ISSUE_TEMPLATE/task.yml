@@ -1,0 +1,15 @@
+name: Task
+description: One unit of work for an agent (less than a day)
+labels: ["proposed"]
+body:
+  - type: textarea
+    id: goal
+    attributes: { label: Goal, description: "What players or the project get when this is done" }
+    validations: { required: true }
+  - type: textarea
+    id: criteria
+    attributes: { label: Acceptance criteria, description: "Checklist QA can verify, one per line" , value: "- [ ] " }
+    validations: { required: true }
+  - type: textarea
+    id: notes
+    attributes: { label: Notes, description: "References, files, design links, constraints" }
