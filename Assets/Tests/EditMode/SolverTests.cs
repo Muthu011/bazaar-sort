@@ -146,6 +146,26 @@ namespace Game.Tests.EditMode
             if (fast.Solvability == Solvability.Solvable) AssertLineWins(board, fast);
         }
 
+        [TestCase(5, 5, 1, 4UL, 1)]
+        [TestCase(5, 5, 1, 5UL, 2)]
+        [TestCase(5, 5, 2, 4UL, 1)]
+        public void Solve_WithALockedShelf_AStarAgreesWithPlainBreadthFirstSearch(int shelves, int types, int hidden,
+            ulong seed, int lockClears)
+        {
+            // Issue #31: lock counters are part of the state; the canonical search must still find the true minimum.
+            var locks = new int[shelves];
+            locks[shelves - 1] = lockClears;
+            var board = SyntheticLevels.Build(SyntheticLevels.Deal(shelves, types, hidden, seed), locks);
+
+            var fast = ShortestSolver.Solve(board);
+            var reference = ShortestSolver.Solve(board, null, new SolverOptions { ReferenceMode = true });
+
+            Assert.AreNotEqual(Solvability.Unknown, reference.Solvability, "reference search ran out of budget");
+            Assert.AreEqual(reference.Solvability, fast.Solvability);
+            Assert.AreEqual(reference.MinMoves, fast.MinMoves);
+            if (fast.Solvability == Solvability.Solvable) AssertLineWins(board, fast);
+        }
+
         [Test]
         public void Analysis_UnsolvableBoard_EveryPlayLosesAndEveryStateIsADeadEnd()
         {
