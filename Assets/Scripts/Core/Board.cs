@@ -101,6 +101,20 @@ namespace Game.Core
             return new Board(shelves);
         }
 
+        /// <summary>
+        /// An independent copy of the current, settled state, for search tools such as the level solver. The copy has
+        /// no event subscribers and has not raised Won or Stuck; moves on either board never affect the other.
+        /// </summary>
+        public Board Clone()
+        {
+            var shelves = new Shelf[_shelves.Length];
+            for (int i = 0; i < _shelves.Length; i++)
+            {
+                shelves[i] = _shelves[i].Clone();
+            }
+            return new Board(shelves);
+        }
+
         public int ShelfCount => _shelves.Length;
 
         public Shelf GetShelf(int index)
