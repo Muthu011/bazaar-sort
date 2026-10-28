@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 
 namespace Game.Core
 {
@@ -49,8 +50,11 @@ namespace Game.Core
         /// building a shelf from level data).
         ///
         /// Construction does not raise events. If a shelf starts with an empty front row and hidden layers behind,
-        /// the next non-empty layer is moved forward silently so the board starts in a settled state. A triple that
-        /// is already in a starting front row is NOT cleared; level validation should reject such levels.
+        /// the next non-empty layer is moved forward silently so the board starts in a settled state.
+        ///
+        /// A level must never start with a ready-made triple in a front row. The level loader rejects such levels,
+        /// so the board trusts its input; in the editor and development builds it throws
+        /// <see cref="InvalidOperationException"/> as a safety net.
         /// </summary>
         public Board(IEnumerable<Shelf> shelves)
         {
@@ -74,6 +78,7 @@ namespace Game.Core
                 }
                 _itemCount += _shelves[i].TotalItemCount;
             }
+            AssertNoStartingMatch();
         }
 
         /// <summary>Convenience overload.</summary>
@@ -134,9 +139,10 @@ namespace Game.Core
         /// out of range, slot index out of range, empty source slot, target equals source shelf, target front row
         /// full.
         ///
-        /// Interpretation of the issue's "same slot" rule: an item may not be moved to the shelf it is already on.
-        /// Since items always land in the leftmost free slot, a same-shelf move would at best shuffle the item
-        /// sideways, which never changes whether the shelf can clear, so it is treated as illegal.
+        /// The issue's "same slot" rule: an item may not be moved to the shelf it is already on. Any three identical
+        /// items on a shelf clear wherever they sit, so such a move would be a no-op. <see cref="MoveResult.SameShelf"/>
+        /// is a cancel, not a mistake: the view puts the item back without a shake and no move is counted. It takes
+        /// precedence over <see cref="MoveResult.TargetFull"/>, so dropping back onto a full shelf is also a cancel.
         /// </summary>
         public MoveResult CanMove(int fromShelf, int fromSlot, int toShelf)
         {
@@ -196,6 +202,21 @@ namespace Game.Core
             }
 
             return true;
+        }
+
+        /// <summary>Safety net for level data the loader should have rejected. Stripped from release builds.</summary>
+        [Conditional("UNITY_ASSERTIONS")]
+        private void AssertNoStartingMatch()
+        {
+            for (int i = 0; i < _shelves.Length; i++)
+            {
+                string match = _shelves[i].FindFrontMatch();
+                if (match != null)
+                {
+                    throw new InvalidOperationException(
+                        $"Shelf {i} starts with a ready-made triple of '{match}'. Level validation should reject this level.");
+                }
+            }
         }
 
         /// <summary>Clears triples and reveals layers on one shelf until nothing more changes.</summary>

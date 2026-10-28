@@ -80,6 +80,32 @@ namespace Game.Tests.EditMode
         }
 
         [Test]
+        public void Construct_StartingFrontTriple_FailsSafetyNet()
+        {
+            var ex = Assert.Throws<InvalidOperationException>(() => new Board(
+                S(Row(A, null, null)),
+                S(Row(B, B, B))));
+            StringAssert.Contains("Shelf 1", ex.Message);
+            StringAssert.Contains(B, ex.Message);
+        }
+
+        [Test]
+        public void Construct_TripleRevealedBehindEmptyFront_FailsSafetyNet()
+        {
+            Assert.Throws<InvalidOperationException>(() => new Board(
+                S(Row(null, null, null), Row(C, C, C)),
+                S(Row(A, null, null))));
+        }
+
+        [Test]
+        public void Construct_TripleInHiddenLayer_IsAllowed()
+        {
+            Assert.DoesNotThrow(() => new Board(
+                S(Row(A, A, null), Row(B, B, B)),
+                S(Row(A, null, null))));
+        }
+
+        [Test]
         public void Construct_EmptyFrontWithHiddenLayer_RevealsSilently()
         {
             var shelf = S(Row(null, null, null), Row(null, null, null), Row(B, B, null));
@@ -176,6 +202,18 @@ namespace Game.Tests.EditMode
             Assert.AreEqual(MoveResult.SameShelf, result);
             Assert.AreEqual(A, board.GetShelf(0).GetFrontItem(0));
             Assert.IsEmpty(log.Entries);
+        }
+
+        [Test]
+        public void TryMove_BackOntoOwnFullShelf_IsACancel_NotTargetFull()
+        {
+            var board = new Board(
+                S(Row(A, B, C)),
+                S(Row(null, null, null)));
+
+            Assert.IsFalse(board.TryMove(0, 1, 0, out var result));
+            Assert.AreEqual(MoveResult.SameShelf, result);
+            Assert.AreEqual(B, board.GetShelf(0).GetFrontItem(1));
         }
 
         [TestCase(-1, 0, 1, MoveResult.InvalidShelf)]

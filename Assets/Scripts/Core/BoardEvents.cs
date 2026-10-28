@@ -10,7 +10,10 @@ namespace Game.Core
         InvalidSlot,
         /// <summary>The chosen front slot has no item.</summary>
         EmptySlot,
-        /// <summary>Target shelf is the source shelf (the "same slot" rule; see Board.TryMove).</summary>
+        /// <summary>
+        /// Target shelf is the source shelf. A cancel, not a mistake: put the item back, no shake, no move counted
+        /// (see <see cref="Board.CanMove"/>).
+        /// </summary>
         SameShelf,
         /// <summary>Target shelf has no free front slot.</summary>
         TargetFull,

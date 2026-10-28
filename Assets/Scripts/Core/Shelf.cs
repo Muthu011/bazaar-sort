@@ -140,6 +140,22 @@ namespace Game.Core
         /// </summary>
         internal string TryClearFrontMatch()
         {
+            string match = FindFrontMatch();
+            if (match == null) return null;
+
+            for (int j = 0; j < SlotCount; j++)
+            {
+                if (string.Equals(_front[j], match, StringComparison.Ordinal)) _front[j] = null;
+            }
+            return match;
+        }
+
+        /// <summary>
+        /// The id of the item that forms a <see cref="GameRules.MatchCount"/> match in the front row, or null.
+        /// Changes nothing.
+        /// </summary>
+        internal string FindFrontMatch()
+        {
             for (int i = 0; i < SlotCount; i++)
             {
                 string candidate = _front[i];
@@ -151,13 +167,7 @@ namespace Game.Core
                     if (string.Equals(_front[j], candidate, StringComparison.Ordinal)) identical++;
                 }
 
-                if (!GameRules.IsMatch(identical)) continue;
-
-                for (int j = 0; j < SlotCount; j++)
-                {
-                    if (string.Equals(_front[j], candidate, StringComparison.Ordinal)) _front[j] = null;
-                }
-                return candidate;
+                if (GameRules.IsMatch(identical)) return candidate;
             }
             return null;
         }
