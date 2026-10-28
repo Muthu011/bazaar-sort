@@ -34,6 +34,7 @@ Launch: Google Play India, 12 January 2027 (before Pongal). Owner and only human
 ## Hard limits (never)
 - Never push to `main`, force-push, merge a PR, or delete branches you didn't create.
 - Never read, create or use keystores, Play Console credentials, API keys or payment details.
+  One exception: development builds (Slice 1) may let Unity use, and create if missing, its default Android debug keystore. Never create, read or commit a release or upload keystore; only Muthu makes those.
 - Never publish to production, change prices, or start paid campaigns.
 - Never add a package, SDK, font or asset source that isn't in `docs/approved-dependencies.md`. Propose it in an issue instead.
 - Never delete or weaken tests or thresholds to make a check pass.
