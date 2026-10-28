@@ -53,3 +53,18 @@ No blocking bugs found.
 6. Unity MCP results are the producer's, not re-run by QA.
 
 RESULT: PASS
+
+## Round 2: Muthu's answers (2026-10-28)
+Checked by the producer session through Unity MCP. The qa-tester agent can't reach Unity in this session.
+
+| Check | Result | Evidence |
+| --- | --- | --- |
+| Locked and conveyor shelves rejected | PASS | New `LevelErrorCode.UnsupportedShelfKind`. Tests: `Validate_LockedShelf_IsNotSupportedYet`, `Validate_ConveyorShelf_IsNotSupportedYet` (each checks the exact message) |
+| Object id master list | PASS | `ObjectCatalog.World1` unchanged (10 ids) and recorded in `docs/game-design.md` |
+| CLAUDE.md layout line | PASS | `Assets/Scripts/Levels/` line added, as Muthu asked |
+| Game.Core untouched | PASS | `git diff origin/main -- Assets/Scripts/Core` is empty |
+| Edit Mode tests | PASS | 122/122 |
+| Play Mode tests | PASS | 1/1 |
+| Console clean | PASS | 0 errors, 0 warnings after a forced recompile |
+
+RESULT: PASS
