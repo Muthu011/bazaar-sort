@@ -14,5 +14,6 @@
     { "id": "s4", "kind": "normal", "lockClears": 0, "layers": [["masala_dabba", null, null]] }
   ],
   "trays": [],
-  "wrapped": []
+  "wrapped": [],
+  "solver": { "solvable": true, "minMoves": 3, "deadEndRate": 0.0, "estWinRate": 1.0, "hash": "573a9f2f314dc52d" }
 }

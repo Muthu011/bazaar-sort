@@ -13,5 +13,6 @@
     { "id": "s4", "kind": "normal", "lockClears": 0, "layers": [["tawa", null, "tumbler"]] }
   ],
   "trays": [],
-  "wrapped": []
+  "wrapped": [],
+  "solver": { "solvable": true, "minMoves": 8, "deadEndRate": 0.017, "estWinRate": 0.882, "hash": "e1e252aa25fc4f30" }
 }
