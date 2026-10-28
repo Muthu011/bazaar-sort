@@ -160,7 +160,7 @@ namespace Game.View
             _camera.clearFlags = CameraClearFlags.SolidColor;
             _camera.backgroundColor = BackgroundColor;
 
-            _layout = BoardLayout.Compute(_board.ShelfCount, Shelf.SlotCount, safeArea, _settings);
+            _layout = BoardLayout.Compute(_board.ShelfCount, Shelf.SlotCount, safeArea, _settings, ScreenDensity.Current);
             float labelScale = _layout.TileSize * LabelHeightInTile / PixelsPerUnit * 10f / LabelFontSize;
 
             for (int i = 0; i < _shelves.Length; i++)

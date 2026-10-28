@@ -156,6 +156,139 @@ namespace Game.Tests.EditMode
             }
         }
 
+        // Item touch areas in dp (issue #5 review): 48 dp wherever the gaps allow, 44 dp floor on 720p phones.
+        private static IEnumerable<TestCaseData> DensityScreens()
+        {
+            // name, width, height, density, fewest shelves, most shelves, minimum dp
+            yield return new TestCaseData("16:9 720x1280 @2.0", 720, 1280, 2.0f, 4, 14, BoardLayout.FloorTouchDp).SetName("{0} 44dp");
+            yield return new TestCaseData("20:9 720x1600 @2.0", 720, 1600, 2.0f, 4, 14, BoardLayout.FloorTouchDp).SetName("{0} 44dp");
+            yield return new TestCaseData("16:9 1080x1920 @2.625", 1080, 1920, 2.625f, 4, 14, BoardLayout.TargetTouchDp).SetName("{0} 48dp");
+            yield return new TestCaseData("20:9 1080x2400 @2.625", 1080, 2400, 2.625f, 4, 14, BoardLayout.TargetTouchDp).SetName("{0} 48dp");
+            yield return new TestCaseData("16:9 1080x1920 @3.0", 1080, 1920, 3.0f, 4, 8, BoardLayout.TargetTouchDp).SetName("{0} 48dp");
+            yield return new TestCaseData("20:9 1080x2400 @3.0", 1080, 2400, 3.0f, 4, 8, BoardLayout.TargetTouchDp).SetName("{0} 48dp");
+        }
+
+        [TestCaseSource(nameof(DensityScreens))]
+        public void ItemTouchAreas_MeetDpMinimum(string name, int width, int height, float density, int fewest, int most, float minDp)
+        {
+            var safe = new Rect(0, 0, width, height);
+            float smallest = float.MaxValue;
+            for (int count = fewest; count <= most; count++)
+            {
+                var layout = BoardLayout.Compute(count, Shelf.SlotCount, safe, BoardLayoutSettings.Default, density);
+                for (int i = 0; i < count; i++)
+                {
+                    for (int slot = 0; slot < Shelf.SlotCount; slot++)
+                    {
+                        var touch = layout.GetSlotHitRect(i, slot);
+                        string context = $"{name}, {count} shelves, shelf {i} slot {slot}";
+                        Assert.GreaterOrEqual(touch.width / density, minDp - Epsilon, $"{context}: width {touch.width} px = {touch.width / density} dp");
+                        Assert.GreaterOrEqual(touch.height / density, minDp - Epsilon, $"{context}: height {touch.height} px = {touch.height / density} dp");
+                        smallest = Mathf.Min(smallest, Mathf.Min(touch.width, touch.height));
+                    }
+                }
+            }
+            TestContext.WriteLine($"{name}, {fewest}-{most} shelves: smallest item touch side {smallest:F1} px = {smallest / density:F1} dp");
+        }
+
+        [TestCaseSource(nameof(DensityScreens))]
+        public void ItemTouchAreas_ContainTheirTile_NeverOverlap_AndHitTestFindsThem(string name, int width, int height, float density, int fewest, int most, float minDp)
+        {
+            var safe = new Rect(0, 0, width, height);
+            for (int count = 4; count <= 14; count++)
+            {
+                var layout = BoardLayout.Compute(count, Shelf.SlotCount, safe, BoardLayoutSettings.Default, density);
+                string context = $"{name}, {count} shelves";
+                for (int i = 0; i < count; i++)
+                {
+                    for (int slot = 0; slot < Shelf.SlotCount; slot++)
+                    {
+                        var touch = layout.GetSlotHitRect(i, slot);
+                        var tile = layout.GetFrontSlotRect(i, slot);
+                        Assert.IsTrue(Contains(touch, tile), $"{context}: shelf {i} slot {slot} touch area {touch} does not contain tile {tile}");
+                        Assert.IsTrue(Contains(layout.GetShelfHitRect(i), touch), $"{context}: shelf {i} slot {slot} touch area outside the shelf's drop area");
+
+                        var expected = BoardTarget.At(i, slot);
+                        Assert.AreEqual(expected, layout.HitTest(tile.center), $"{context}: tile centre");
+                        Assert.AreEqual(expected, layout.HitTest(layout.GetHiddenSlotRect(i, slot).center), $"{context}: peeking hidden tile");
+                        const float inset = 0.5f;
+                        Assert.AreEqual(expected, layout.HitTest(new Vector2(touch.xMin + inset, touch.yMin + inset)), $"{context}: touch area bottom-left");
+                        Assert.AreEqual(expected, layout.HitTest(new Vector2(touch.xMax - inset, touch.yMax - inset)), $"{context}: touch area top-right");
+
+                        for (int j = i; j < count; j++)
+                        {
+                            for (int other = 0; other < Shelf.SlotCount; other++)
+                            {
+                                if (j == i && other <= slot) continue;
+                                Assert.IsFalse(Overlaps(touch, layout.GetSlotHitRect(j, other)),
+                                    $"{context}: touch areas of shelf {i} slot {slot} and shelf {j} slot {other} overlap");
+                            }
+                        }
+                    }
+                }
+
+                Assert.AreEqual(BoardTarget.None, layout.HitTest(new Vector2(safe.center.x, safe.yMax - 1f)), $"{context}: HUD");
+            }
+        }
+
+        [Test]
+        public void Density_ChangesOnlyTouchAreas_NotShelvesOrTiles()
+        {
+            var safe = new Rect(0, 0, 720, 1280);
+            for (int count = 4; count <= 14; count++)
+            {
+                var px = BoardLayout.Compute(count, Shelf.SlotCount, safe, BoardLayoutSettings.Default);
+                var dp = BoardLayout.Compute(count, Shelf.SlotCount, safe, BoardLayoutSettings.Default, 2.0f);
+                Assert.AreEqual(px.TileSize, dp.TileSize, $"{count} shelves: tile size");
+                for (int i = 0; i < count; i++)
+                {
+                    Assert.AreEqual(px.GetShelfRect(i), dp.GetShelfRect(i), $"{count} shelves: shelf {i}");
+                    Assert.AreEqual(px.GetShelfHitRect(i), dp.GetShelfHitRect(i), $"{count} shelves: shelf {i} drop area");
+                    for (int slot = 0; slot < Shelf.SlotCount; slot++)
+                    {
+                        Assert.AreEqual(px.GetFrontSlotRect(i, slot), dp.GetFrontSlotRect(i, slot), $"{count} shelves: shelf {i} tile {slot}");
+                        Assert.AreEqual(px.GetHiddenSlotRect(i, slot), dp.GetHiddenSlotRect(i, slot), $"{count} shelves: shelf {i} hidden {slot}");
+                    }
+                }
+            }
+        }
+
+        [Test]
+        public void NarrowMiddleItem_TakesRoomFromWiderNeighbours_UpToTheirPictures()
+        {
+            // 14 shelves on 720x1280: halfway splits leave the middle item under 48 dp at density 2.
+            var layout = BoardLayout.Compute(14, Shelf.SlotCount, new Rect(0, 0, 720, 1280), BoardLayoutSettings.Default, 2.0f);
+            var left = layout.GetFrontSlotRect(0, 0);
+            var middle = layout.GetFrontSlotRect(0, 1);
+            var right = layout.GetFrontSlotRect(0, 2);
+            float halfwaySplit = (middle.xMax + right.xMin) * 0.5f - (left.xMax + middle.xMin) * 0.5f;
+            Assert.Less(halfwaySplit, BoardLayout.TargetTouchDp * 2.0f, "Precondition: halfway split is under 48 dp.");
+
+            var touch = layout.GetSlotHitRect(0, 1);
+            Assert.Greater(touch.width, halfwaySplit + 1f, "Middle item grew past the halfway split.");
+            Assert.GreaterOrEqual(touch.xMin, left.xMax - Epsilon, "Never over the left neighbour's picture.");
+            Assert.LessOrEqual(touch.xMax, right.xMin + Epsilon, "Never over the right neighbour's picture.");
+        }
+
+        [Test]
+        public void WideItems_KeepHalfwaySplits()
+        {
+            // 4 shelves on 1080x1920: every item is already over 48 dp, so touch areas split halfway between pictures.
+            var layout = BoardLayout.Compute(4, Shelf.SlotCount, new Rect(0, 0, 1080, 1920), BoardLayoutSettings.Default, 2.625f);
+            var a = layout.GetFrontSlotRect(0, 0);
+            var b = layout.GetFrontSlotRect(0, 1);
+            Assert.AreEqual((a.xMax + b.xMin) * 0.5f, layout.GetSlotHitRect(0, 0).xMax, Epsilon);
+            Assert.AreEqual((a.xMax + b.xMin) * 0.5f, layout.GetSlotHitRect(0, 1).xMin, Epsilon);
+        }
+
+        [Test]
+        public void Compute_RejectsNonPositiveDensity()
+        {
+            var safe = new Rect(0, 0, 1080, 1920);
+            Assert.Throws<System.ArgumentOutOfRangeException>(() => BoardLayout.Compute(4, 3, safe, BoardLayoutSettings.Default, 0f));
+            Assert.Throws<System.ArgumentOutOfRangeException>(() => BoardLayout.Compute(4, 3, safe, BoardLayoutSettings.Default, float.NaN));
+        }
+
         [Test]
         public void HitTest_InGapBetweenRows_PicksNearestShelf()
         {
