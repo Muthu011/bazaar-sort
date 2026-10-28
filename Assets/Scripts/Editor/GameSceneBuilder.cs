@@ -202,6 +202,60 @@ namespace Game.EditorTools
         }
 
         /// <summary>
+        /// The dev level select (L1..L5, development builds only) over w1_l001 at 1080x2400 with the 20:9 safe area
+        /// (110 px cutout, 60 px gesture bar), into "dev_level_select_1080x2400.png". The fps readout shows "0 fps"
+        /// because a still frame has no frame history.
+        /// </summary>
+        public static string CaptureDevLevelSelectScreenshot(string outputDir)
+        {
+            Directory.CreateDirectory(outputDir);
+            var levels = new TextAsset[World1LevelPaths.Length];
+            for (int i = 0; i < levels.Length; i++) levels[i] = AssetDatabase.LoadAssetAtPath<TextAsset>(World1LevelPaths[i]);
+
+            var size = ScreenshotSizes[1];
+            var safe = SafeAreaFor(size);
+            string path = Path.Combine(outputDir, $"dev_level_select_{size.x}x{size.y}.png");
+            var target = new RenderTexture(size.x, size.y, 24, RenderTextureFormat.ARGB32);
+            var cameraObject = new GameObject("Screenshot Camera") { hideFlags = HideFlags.HideAndDontSave };
+            var viewObject = new GameObject("Screenshot Board View") { hideFlags = HideFlags.HideAndDontSave };
+            var overlayObject = new GameObject("Screenshot Dev Overlay") { hideFlags = HideFlags.HideAndDontSave };
+            var previousActive = RenderTexture.active;
+            try
+            {
+                var camera = cameraObject.AddComponent<Camera>();
+                camera.targetTexture = target;
+                var view = viewObject.AddComponent<BoardView>();
+                var bootstrap = viewObject.AddComponent<LevelBootstrap>();
+                bootstrap.Configure(levels, view, camera);
+                var overlay = overlayObject.AddComponent<DevOverlay>();
+                overlay.Configure(bootstrap, camera);
+                overlay.Build();
+                if (!bootstrap.LoadLevel(0)) return null;
+                view.Bind(view.Board, camera, safe, BoardLayoutSettings.Default);
+                overlay.Layout(safe, ScreenshotDensity);
+                Canvas.ForceUpdateCanvases();
+                camera.Render();
+
+                RenderTexture.active = target;
+                var image = new Texture2D(size.x, size.y, TextureFormat.RGB24, false);
+                image.ReadPixels(new Rect(0, 0, size.x, size.y), 0, 0);
+                image.Apply();
+                File.WriteAllBytes(path, image.EncodeToPNG());
+                Object.DestroyImmediate(image);
+                return path;
+            }
+            finally
+            {
+                RenderTexture.active = previousActive;
+                Object.DestroyImmediate(overlayObject);
+                Object.DestroyImmediate(viewObject);
+                Object.DestroyImmediate(cameraObject);
+                target.Release();
+                Object.DestroyImmediate(target);
+            }
+        }
+
+        /// <summary>
         /// Four shelves; moving s2's idli stand onto s1 fills s1 and reveals a full row on s2, leaving no free slot:
         /// the board is stuck. Same shape as the Play Mode stuck test level.
         /// </summary>
