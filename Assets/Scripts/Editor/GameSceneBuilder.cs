@@ -154,15 +154,33 @@ namespace Game.EditorTools
                 won.TryMove(3, 0, 2);
                 var safe = SafeAreaFor(size);
                 string path = Path.Combine(outputDir, $"win_panel_{size.x}x{size.y}.png");
-                written.Add(Capture(won, size.x, size.y, path, view => view.CompleteAnimations(), BoardOutcome.Won, safe));
+                written.Add(Capture(won, size.x, size.y, path, view => view.CompleteAnimations(), ResultPanel.Win, safe));
             }
 
             var stuck = StuckBoard();
             stuck.TryMove(1, 0, 0);
             var stuckSize = ScreenshotSizes[0];
             written.Add(Capture(stuck, stuckSize.x, stuckSize.y, Path.Combine(outputDir, $"stuck_panel_{stuckSize.x}x{stuckSize.y}.png"),
-                view => view.CompleteAnimations(), BoardOutcome.Stuck, SafeAreaFor(stuckSize)));
+                view => view.CompleteAnimations(), ResultPanel.Stuck, SafeAreaFor(stuckSize)));
             return written;
+        }
+
+        /// <summary>w1_l005, the last level, won by its line in pack-1.md: the More-levels-soon panel at 1080x1920.</summary>
+        public static string CaptureMoreLevelsScreenshot(string outputDir)
+        {
+            Directory.CreateDirectory(outputDir);
+            var won = LoadOrNull("Assets/Levels/World1/w1_l005.json");
+            if (won == null) return null;
+            int[] line = { 3,1,5, 0,0,1, 4,1,0, 0,0,1, 0,1,2, 1,2,2, 0,2,1, 1,0,0, 3,0,1, 0,0,2, 1,0,0, 0,0,2, 1,1,0, 0,0,1, 1,0,2, 4,0,1, 2,1,1, 3,2,2 };
+            for (int i = 0; i < line.Length; i += 3) won.TryMove(line[i], line[i + 1], line[i + 2]);
+            if (!won.IsWon)
+            {
+                Debug.LogError("CaptureMoreLevelsScreenshot: the w1_l005 line did not win.");
+                return null;
+            }
+            var size = ScreenshotSizes[0];
+            string path = Path.Combine(outputDir, $"more_levels_soon_{size.x}x{size.y}.png");
+            return Capture(won, size.x, size.y, path, view => view.CompleteAnimations(), ResultPanel.MoreLevelsSoon, SafeAreaFor(size));
         }
 
         /// <summary>
@@ -212,7 +230,7 @@ namespace Game.EditorTools
 
         /// <summary>Renders <paramref name="board"/> at <paramref name="width"/>x<paramref name="height"/> into a PNG at <paramref name="path"/>.</summary>
         public static string Capture(Board board, int width, int height, string path, System.Action<BoardView> beforeRender = null,
-            BoardOutcome panel = BoardOutcome.None, Rect? safeArea = null)
+            ResultPanel panel = ResultPanel.None, Rect? safeArea = null)
         {
             var safe = safeArea ?? new Rect(0, 0, width, height);
             var target = new RenderTexture(width, height, 24, RenderTextureFormat.ARGB32);
@@ -226,7 +244,7 @@ namespace Game.EditorTools
                 var view = viewObject.AddComponent<BoardView>();
                 view.Bind(board, camera, safe, BoardLayoutSettings.Default);
                 beforeRender?.Invoke(view);
-                if (panel != BoardOutcome.None)
+                if (panel != ResultPanel.None)
                 {
                     var panels = viewObject.AddComponent<ResultPanels>();
                     panels.Build(camera, false);

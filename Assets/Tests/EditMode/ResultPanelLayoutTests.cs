@@ -62,6 +62,22 @@ namespace Game.Tests.EditMode
         }
 
         [Test]
+        public void TwoLineTitle_IsTaller_AndStillFitsWith48dpButtons()
+        {
+            foreach (var safe in SafeAreas)
+            {
+                var one = ResultPanelLayout.Compute(safe, 1);
+                var two = ResultPanelLayout.Compute(safe, 1, 2);
+                Assert.Greater(two.TitleHeight, one.TitleHeight, $"{safe}: room for a second line");
+                Assert.GreaterOrEqual(two.Button.y, ResultPanelLayout.MinTouchDp, $"{safe}: button height");
+                Assert.GreaterOrEqual(two.Button.x, ResultPanelLayout.MinTouchDp, $"{safe}: button width");
+                Assert.LessOrEqual(two.Card.y, safe.y - 2f * ResultPanelLayout.MarginDp + 0.001f, $"{safe}: card height");
+                Assert.Less(two.ButtonCentre(0).y + two.Button.y * 0.5f, two.TitleCentre.y - two.TitleHeight * 0.5f + 0.001f,
+                    $"{safe}: button under the title");
+            }
+        }
+
+        [Test]
         public void SafeAreaAnchors_AreFractionsOfTheScreen()
         {
             ResultPanelLayout.SafeAreaAnchors(new Rect(0f, 144f, 1080f, 2160f), 1080f, 2400f, out var min, out var max);

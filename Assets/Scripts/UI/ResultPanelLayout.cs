@@ -42,7 +42,7 @@ namespace Game.UI
     }
 
     /// <summary>
-    /// Layout maths for the Win and Stuck panels, pure so it is Edit Mode tested: a card centred in the safe area,
+    /// Layout maths for the Win, Stuck and More-levels-soon panels, pure so it is Edit Mode tested: a card centred in the safe area,
     /// never wider than <see cref="MaxCardWidthDp"/>, kept <see cref="MarginDp"/> clear of the safe-area edges, with
     /// buttons at least <see cref="MinTouchDp"/> tall (style guide: 48 dp tap targets).
     /// </summary>
@@ -59,6 +59,9 @@ namespace Game.UI
         public const float PaddingDp = 24f;
         public const float TitleHeightDp = 56f;
         public const float MinTitleHeightDp = 32f;
+
+        /// <summary>Extra title height for each line after the first (title font plus line spacing).</summary>
+        public const float TitleLineDp = 36f;
         public const float ButtonGapDp = 12f;
 
         /// <summary>Title font size in dp.</summary>
@@ -67,24 +70,29 @@ namespace Game.UI
         /// <summary>Button label font size in dp.</summary>
         public const int ButtonFontDp = 22;
 
-        /// <summary>Card and button sizes for a safe area of <paramref name="safeSizeDp"/> with <paramref name="buttonCount"/> buttons.</summary>
-        public static ResultPanelMetrics Compute(Vector2 safeSizeDp, int buttonCount)
+        /// <summary>
+        /// Card and button sizes for a safe area of <paramref name="safeSizeDp"/> with <paramref name="buttonCount"/>
+        /// buttons and a title of <paramref name="titleLines"/> lines.
+        /// </summary>
+        public static ResultPanelMetrics Compute(Vector2 safeSizeDp, int buttonCount, int titleLines = 1)
         {
             if (buttonCount < 1) buttonCount = 1;
+            if (titleLines < 1) titleLines = 1;
+            float extraLines = (titleLines - 1) * TitleLineDp;
 
             float maxWidth = Mathf.Max(0f, safeSizeDp.x - 2f * MarginDp);
             float maxHeight = Mathf.Max(0f, safeSizeDp.y - 2f * MarginDp);
             float cardWidth = Mathf.Min(MaxCardWidthDp, maxWidth);
 
             float buttonHeight = ButtonHeightDp;
-            float title = TitleHeightDp;
+            float title = TitleHeightDp + extraLines;
             float height = Height(title, buttonHeight, buttonCount);
 
             // Very short safe areas (landscape, split screen): give up title room first, then button room down to
             // the touch floor. Below that the card may overflow; portrait phones never get there.
             if (height > maxHeight)
             {
-                title = Mathf.Max(MinTitleHeightDp, title - (height - maxHeight));
+                title = Mathf.Max(MinTitleHeightDp + extraLines, title - (height - maxHeight));
                 height = Height(title, buttonHeight, buttonCount);
             }
             if (height > maxHeight)

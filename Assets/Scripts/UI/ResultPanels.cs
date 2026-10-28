@@ -8,13 +8,14 @@ using UnityEngine.UI;
 namespace Game.UI
 {
     /// <summary>
-    /// The placeholder Win panel (Next, Retry) and Stuck panel (Retry), built from code with uGUI on a screen-space
+    /// The placeholder Win panel (Next, Retry), Stuck panel (Retry) and More-levels-soon panel (Replay), built from code with uGUI on a screen-space
     /// camera canvas over the board. The canvas works in dp (constant pixel size, scale factor = screen density), so
     /// <see cref="ResultPanelLayout"/> sizes come out the same on every phone, and the cards sit inside the safe area.
     ///
-    /// Thin: shows a panel when <see cref="BoardView.OutcomeReady"/> fires (after the clear animations), hides on
-    /// <see cref="LevelBootstrap.LevelLoaded"/>, and turns button taps into <see cref="LevelBootstrap.Next"/> and
-    /// <see cref="LevelBootstrap.Retry"/>. Text uses Unity's built-in legacy font, like the board labels.
+    /// Thin: shows a panel when <see cref="BoardView.OutcomeReady"/> fires (after the clear animations; which one is
+    /// <see cref="ResultPanelChoice"/>: winning the last level shows More-levels-soon instead of Win), hides on
+    /// <see cref="LevelBootstrap.LevelLoaded"/>, and turns button taps into <see cref="LevelBootstrap.Next"/>,
+    /// <see cref="LevelBootstrap.Retry"/> and <see cref="LevelBootstrap.ReplayFromFirst"/>. Text uses Unity's built-in legacy font, like the board labels.
     /// </summary>
     public sealed class ResultPanels : MonoBehaviour
     {
@@ -22,6 +23,12 @@ namespace Game.UI
         internal const string StuckTitle = "No moves left";
         internal const string NextLabel = "Next";
         internal const string RetryLabel = "Retry";
+        internal const string MoreLevelsTitle = "More levels coming soon";
+        internal const string ReplayLabel = "Replay";
+
+        /// <summary>The More-levels-soon title as drawn: two lines, so it fits the 320 dp card at the title size.</summary>
+        private const string MoreLevelsTitleLines = "More levels\ncoming soon";
+        private const int MoreLevelsTitleLineCount = 2;
 
         private const int CanvasSortingOrder = 100;
 
@@ -43,6 +50,7 @@ namespace Game.UI
         private GameObject _backdrop;
         private Card _win;
         private Card _stuck;
+        private Card _moreLevels;
         private bool _built;
         private BoardView _subscribedView;
         private LevelBootstrap _subscribedLevels;
@@ -57,6 +65,9 @@ namespace Game.UI
         /// <summary>A Retry button was tapped (after <see cref="LevelBootstrap.Retry"/> ran, if wired).</summary>
         public event Action RetryClicked;
 
+        /// <summary>Replay on More-levels-soon was tapped (after <see cref="LevelBootstrap.ReplayFromFirst"/> ran, if wired).</summary>
+        public event Action ReplayClicked;
+
         /// <summary>Wires the view, level list and camera from code (scene builder, tests).</summary>
         public void Configure(BoardView view, LevelBootstrap levels, Camera viewCamera)
         {
@@ -69,6 +80,7 @@ namespace Game.UI
 
         public bool IsWinVisible => _built && _win.Root.activeSelf;
         public bool IsStuckVisible => _built && _stuck.Root.activeSelf;
+        public bool IsMoreLevelsVisible => _built && _moreLevels.Root.activeSelf;
 
         private void OnEnable() => Subscribe();
 
@@ -126,6 +138,8 @@ namespace Game.UI
             _win.SetButton(1, RetryLabel, SecondaryColor, SecondaryText, OnRetry);
             _stuck = new Card(_safeArea, "Stuck Panel", StuckTitle, font, 1);
             _stuck.SetButton(0, RetryLabel, PrimaryColor, PrimaryText, OnRetry);
+            _moreLevels = new Card(_safeArea, "More Levels Panel", MoreLevelsTitleLines, font, 1);
+            _moreLevels.SetButton(0, ReplayLabel, PrimaryColor, PrimaryText, OnReplay);
 
             if (ensureEventSystem && FindAnyObjectByType<EventSystem>() == null)
             {
@@ -175,18 +189,29 @@ namespace Game.UI
             var safeDp = new Vector2(safeAreaPx.width / density, safeAreaPx.height / density);
             _win.Apply(ResultPanelLayout.Compute(safeDp, 2));
             _stuck.Apply(ResultPanelLayout.Compute(safeDp, 1));
+            _moreLevels.Apply(ResultPanelLayout.Compute(safeDp, 1, MoreLevelsTitleLineCount));
         }
 
-        /// <summary>Shows the panel for <paramref name="outcome"/> (None hides both).</summary>
+        /// <summary>
+        /// Shows the panel for <paramref name="outcome"/> (None hides all). A win on the last level of the wired list
+        /// shows More-levels-soon; with no level list wired, a win shows Win.
+        /// </summary>
         public void Show(BoardOutcome outcome)
         {
-            if (!_built) return;
-            _win.Root.SetActive(outcome == BoardOutcome.Won);
-            _stuck.Root.SetActive(outcome == BoardOutcome.Stuck);
-            _backdrop.SetActive(outcome != BoardOutcome.None);
+            Show(ResultPanelChoice.For(outcome, _levels == null || _levels.HasNext));
         }
 
-        public void Hide() => Show(BoardOutcome.None);
+        /// <summary>Shows exactly <paramref name="panel"/> (None hides all).</summary>
+        public void Show(ResultPanel panel)
+        {
+            if (!_built) return;
+            _win.Root.SetActive(panel == ResultPanel.Win);
+            _stuck.Root.SetActive(panel == ResultPanel.Stuck);
+            _moreLevels.Root.SetActive(panel == ResultPanel.MoreLevelsSoon);
+            _backdrop.SetActive(panel != ResultPanel.None);
+        }
+
+        public void Hide() => Show(ResultPanel.None);
 
         private void Subscribe()
         {
@@ -221,11 +246,22 @@ namespace Game.UI
             RetryClicked?.Invoke();
         }
 
+        private void OnReplay()
+        {
+            Hide();
+            if (_levels != null) _levels.ReplayFromFirst();
+            ReplayClicked?.Invoke();
+        }
+
         // ---- Test hooks (Game.Tests.PlayMode) ----
 
         internal Button WinNextButton => _win.Buttons[0];
         internal Button WinRetryButton => _win.Buttons[1];
         internal Button StuckRetryButton => _stuck.Buttons[0];
+        internal Button MoreLevelsReplayButton => _moreLevels.Buttons[0];
+        internal Button[] MoreLevelsButtons => _moreLevels.Buttons;
+        internal Text MoreLevelsTitleLabel => _moreLevels.Title;
+        internal RectTransform MoreLevelsCard => _moreLevels.Rect;
         internal RectTransform WinCard => _win.Rect;
         internal RectTransform StuckCard => _stuck.Rect;
         internal Canvas Canvas => _canvas;
@@ -279,6 +315,7 @@ namespace Game.UI
             public readonly GameObject Root;
             public readonly RectTransform Rect;
             public readonly Button[] Buttons;
+            public readonly Text Title;
             private readonly RectTransform _title;
             private readonly Font _font;
 
@@ -292,6 +329,7 @@ namespace Game.UI
                 Rect.pivot = new Vector2(0.5f, 0.5f);
 
                 var titleText = CreateText(Rect, "Title", font, title, ResultPanelLayout.TitleFontDp, TitleColor);
+                Title = titleText;
                 _title = titleText.rectTransform;
                 _title.anchorMin = _title.anchorMax = new Vector2(0.5f, 0.5f);
 
