@@ -7,8 +7,8 @@ namespace Game.View
     /// <summary>
     /// Scene entry point for the placeholder board: loads levels from an ordered list (World 1: w1_l001 to w1_l005)
     /// through <see cref="LevelLoader"/> and hands each board to a <see cref="BoardView"/>. <see cref="Retry"/> reloads
-    /// the current level and <see cref="Next"/> loads the next one (<see cref="LevelSequence"/>). Re-lays out the board
-    /// when the screen size or safe area changes.
+    /// the current level, <see cref="Next"/> loads the next one (<see cref="LevelSequence"/>; it never loops) and
+    /// <see cref="ReplayFromFirst"/> loads the first one. Re-lays out the board when the screen size or safe area changes.
     /// </summary>
     public sealed class LevelBootstrap : MonoBehaviour
     {
@@ -29,6 +29,9 @@ namespace Game.View
         public int CurrentIndex => _current;
 
         public int LevelCount => _levels == null ? 0 : _levels.Length;
+
+        /// <summary>True when a level follows the current one; false on the last level (or with no levels).</summary>
+        public bool HasNext => LevelCount > 0 && LevelSequence.HasNext(_current, LevelCount);
 
         /// <summary>Name of the level asset being played, or null.</summary>
         public string CurrentLevelName => _current < 0 ? null : _levels[_current].name;
@@ -90,11 +93,21 @@ namespace Game.View
             if (_current >= 0) LoadLevel(_current);
         }
 
-        /// <summary>Loads the next level in the list; after the last one, loops to the first.</summary>
-        public void Next()
+        /// <summary>
+        /// Loads the next level in the list. After the last level there is none: returns false and loads nothing
+        /// (Next never loops; the player gets "More levels coming soon" and <see cref="ReplayFromFirst"/>).
+        /// </summary>
+        public bool Next()
         {
-            if (LevelCount == 0) return;
-            LoadLevel(LevelSequence.Next(_current, LevelCount));
+            if (LevelCount == 0 || !LevelSequence.TryGetNext(_current, LevelCount, out int next)) return false;
+            return LoadLevel(next);
+        }
+
+        /// <summary>Loads the first level of the list in its start state (Replay on "More levels coming soon").</summary>
+        public bool ReplayFromFirst()
+        {
+            if (LevelCount == 0) return false;
+            return LoadLevel(LevelSequence.First);
         }
 
         private void Update()
