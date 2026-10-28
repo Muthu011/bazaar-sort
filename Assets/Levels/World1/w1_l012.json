@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "id": "w1_l012",
+  "world": 1,
+  "index": 12,
+  "role": "easy",
+  "tutorial": null,
+  "moveLimit": null,
+  "timeLimitSec": null,
+  "shelves": [
+    { "id": "s1", "kind": "normal", "lockClears": 0, "layers": [["chai_kettle", "coconut_scraper", "tawa"], ["chai_kettle", "coconut_scraper", "tawa"]] },
+    { "id": "s2", "kind": "normal", "lockClears": 0, "layers": [["idli_stand", "tumbler", "pressure_cooker"], ["rolling_pin", "rolling_pin", "tawa"]] },
+    { "id": "s3", "kind": "normal", "lockClears": 0, "layers": [["rolling_pin", "chai_kettle", "coconut_scraper"]] },
+    { "id": "s4", "kind": "normal", "lockClears": 0, "layers": [[null, null, null]] },
+    { "id": "s5", "kind": "normal", "lockClears": 0, "layers": [[null, null, null]] },
+    { "id": "s6", "kind": "locked", "lockClears": 2, "layers": [["idli_stand", "idli_stand", "tumbler"], ["tumbler", "pressure_cooker", "pressure_cooker"]] }
+  ],
+  "trays": [],
+  "wrapped": [],
+  "solver": { "solvable": true, "minMoves": 15, "deadEndRate": 0.001, "estWinRate": 0.943, "hash": "f010ca261758b85c" }
+}
