@@ -14,5 +14,6 @@
     { "id": "s5", "kind": "normal", "lockClears": 0, "layers": [[null, "pressure_cooker", null]] }
   ],
   "trays": [],
-  "wrapped": []
+  "wrapped": [],
+  "solver": { "solvable": true, "minMoves": 9, "deadEndRate": 0.001, "estWinRate": 0.976, "hash": "7445f6092b6fc2d9" }
 }

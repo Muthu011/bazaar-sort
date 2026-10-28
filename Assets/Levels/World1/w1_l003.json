@@ -7,11 +7,12 @@
   "moveLimit": null,
   "timeLimitSec": null,
   "shelves": [
-    { "id": "s1", "kind": "normal", "lockClears": 0, "layers": [["idli_stand", "tawa", null], ["tumbler", "idli_stand", "pressure_cooker"]] },
+    { "id": "s1", "kind": "normal", "lockClears": 0, "layers": [["idli_stand", "tumbler", null], ["tumbler", "idli_stand", "pressure_cooker"]] },
     { "id": "s2", "kind": "normal", "lockClears": 0, "layers": [["idli_stand", null, "pressure_cooker"]] },
     { "id": "s3", "kind": "normal", "lockClears": 0, "layers": [["tawa", "pressure_cooker", "tumbler"]] },
-    { "id": "s4", "kind": "normal", "lockClears": 0, "layers": [["tawa", null, "tumbler"]] }
+    { "id": "s4", "kind": "normal", "lockClears": 0, "layers": [["tawa", null, "tawa"]] }
   ],
   "trays": [],
-  "wrapped": []
+  "wrapped": [],
+  "solver": { "solvable": true, "minMoves": 8, "deadEndRate": 0.0, "estWinRate": 0.992, "hash": "6053e9f6bb6ad738" }
 }

@@ -16,5 +16,6 @@
     { "id": "s6", "kind": "normal", "lockClears": 0, "layers": [["idli_stand", "idli_stand", null]] }
   ],
   "trays": [],
-  "wrapped": []
+  "wrapped": [],
+  "solver": { "solvable": true, "minMoves": 8, "deadEndRate": 0.0, "estWinRate": 0.998, "hash": "399e4a9dfc9f5d0f" }
 }

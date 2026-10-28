@@ -6,6 +6,7 @@
         "UnityEditor.TestRunner",
         "Game.Core",
         "Game.Levels",
+        "Game.Solver",
         "Game.View",
         "Game.UI"
     ],

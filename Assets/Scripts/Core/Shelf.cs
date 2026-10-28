@@ -13,7 +13,8 @@ namespace Game.Core
         /// <summary>Slots per layer (front row and every hidden layer). Matches level schema v1.</summary>
         public const int SlotCount = 3;
 
-        private readonly string[] _front = new string[SlotCount];
+        // Not readonly so Clone can give the copy its own front row.
+        private string[] _front = new string[SlotCount];
         // Hidden layers in reveal order: _hidden[_nextHidden] is the layer directly behind the front row.
         private readonly List<string[]> _hidden = new List<string[]>();
         private int _nextHidden;
@@ -170,6 +171,18 @@ namespace Game.Core
                 if (GameRules.IsMatch(identical)) return candidate;
             }
             return null;
+        }
+
+        /// <summary>
+        /// Copy for <see cref="Board.Clone"/>. MemberwiseClone copies every value field (so new per-shelf state is
+        /// carried over without touching this method); only the front row is mutable, so it gets its own array.
+        /// Hidden layers are never written after construction, so the copy shares them.
+        /// </summary>
+        internal Shelf Clone()
+        {
+            var copy = (Shelf)MemberwiseClone();
+            copy._front = (string[])_front.Clone();
+            return copy;
         }
 
         /// <summary>

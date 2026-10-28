@@ -14,5 +14,6 @@
     { "id": "s4", "kind": "normal", "lockClears": 0, "layers": [[null, null, null]] }
   ],
   "trays": [],
-  "wrapped": []
+  "wrapped": [],
+  "solver": { "solvable": true, "minMoves": 3, "deadEndRate": 0.0, "estWinRate": 1.0, "hash": "6564fa01f1b5d1c1" }
 }
