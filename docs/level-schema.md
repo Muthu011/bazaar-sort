@@ -51,15 +51,22 @@ this one line of each file. Edit Mode `LevelPackTests` fail when a stored block 
 menu after every level change. Code: `Assets/Scripts/Editor/Solver/` (editor-only assembly `Game.Solver`). Every move
 is applied by `Game.Core.Board`, so the solver uses exactly the game's rules.
 
-- `solvable`, `minMoves`: exact shortest win, found by A* over canonical board states (normal shelves are
-  interchangeable, item order inside a row never matters) with an admissible heuristic. A search that runs out of budget
-  (2,000,000 expanded states or 60 s) reports "unknown" and nothing is written.
+- `solvable`, `minMoves`: exact shortest win, found by A* over canonical board states (shelves are interchangeable
+  whatever their order, locked ones included since each shelf's lock counter is part of the state; item order inside a
+  row never matters; object types are relabelled canonically, so boards that differ only by renaming types are one
+  state) with an admissible heuristic. A search that runs out of budget (2,000,000 expanded states or 60 s) reports
+  "unknown" and nothing is written.
+- Level budget (issue #31): one analysis of one level (shortest win, simulated plays and dead-end searches together)
+  may build at most 40,000,000 boards and take at most 30 s. When either runs out the analysis stops, is reported as
+  INCONCLUSIVE with the reason, and nothing is written; `LevelPackTests` then fail with that message instead of hanging.
 - `estWinRate`: wins out of 1000 simulated first-try plays, seed 20270112. The simulated player prefers any move that
   clears a triple; otherwise it picks at random among moves that don't lead back to a board it has already seen in that
   play (no undoing, no circling). It loses when stuck, when every move leads back to a seen board, or after 300 moves.
   Each of (shelf, item type, target shelf) is one choice.
 - `deadEndRate`: of the distinct boards (not yet won) that those 1000 plays passed through, the fraction from which a win
-  is no longer reachable.
+  is no longer reachable. "Distinct" and the player's "already seen" use the same board identity as before issue #31
+  (normal shelves in any order are the same board; other shelf kinds keep their place; object types by name), so the
+  stored numbers did not change when the search keys became canonical.
 - `hash`: first 16 hex digits of SHA-256 over the canonical layout. Same hash for any shelf order, mirroring, item order
   inside a row and renaming of object types; different for any change to a row or hidden layer, or to a shelf's kind or
   `lockClears`. Two levels with the same hash are duplicates.
