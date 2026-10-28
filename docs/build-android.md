@@ -34,6 +34,11 @@ Either:
 
   Exit code 0 means success. Search the log for the `AndroidBuild:` line to see the result, size and time.
 
+The first IL2CPP build takes about 7 minutes. Later builds are faster.
+
+If the build reports `Build target 'Android' not supported` or "no APK was written", the Android module was
+installed while the editor was open. Quit and reopen Unity, then build again.
+
 Output: `Builds/Android/BazaarSort-dev.apk`. `Builds/` is gitignored, so never commit the APK.
 
 The build is a development build, IL2CPP, ARM64 only, minimum Android 8.0 (API 26), portrait only, with the
