@@ -3,7 +3,8 @@
     "rootNamespace": "Game.View",
     "references": [
         "Game.Core",
-        "Game.Levels"
+        "Game.Levels",
+        "Unity.InputSystem"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],
