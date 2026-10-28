@@ -10,7 +10,7 @@ Agents may only add what is listed here. To propose something new, open an issue
 | Newtonsoft Json (`com.unity.nuget.newtonsoft-json`, Unity's official package) | Level JSON parsing in `Game.Levels` | Approved by Muthu 2026-10-28. Not used in `Game.Core` |
 | TextMeshPro | Text | |
 | uGUI (`com.unity.ugui`) | UI panels, HUD, buttons | built in. Approved by Muthu 2026-10-28 |
-| DOTween (free) or Unity's own tweening code | Animation | pick one in week 1 |
+| DOTween (free) 1.3.045, Demigiant | Animation in `Game.View` and `Game.UI` only, never in `Game.Core` or `Game.Levels` | Chosen over Unity's own tweening (issue #21). Imported by Muthu on 2026-10-28 into `Assets/Plugins/Demigiant/DOTween/` with `Assets/Resources/DOTweenSettings.asset`; modules Audio, Physics, Physics2D, Sprite, UI. licence: see dotween.demigiant.com/license.php; Muthu to confirm |
 | MCP for Unity (CoplayDev, MIT) | Editor bridge for agents | editor-only, excluded from builds |
 | Unity IAP | Purchases | |
 | Google Mobile Ads (AdMob) Unity plugin | Ads | LevelPlay mediation later, needs approval |

@@ -78,6 +78,29 @@ namespace Game.Tests.EditMode
         }
 
         [Test]
+        public void StarRow_SitsBetweenTitleAndButtons_AndTheCardStillFits()
+        {
+            foreach (var safe in new[] { new Vector2(360f, 640f), new Vector2(360f, 760f), new Vector2(412f, 915f) })
+            {
+                var plain = ResultPanelLayout.Compute(safe, 2);
+                var m = ResultPanelLayout.Compute(safe, 2, 1, ResultPanelLayout.StarRowDp);
+                Assert.AreEqual(0f, plain.StarRow, "No star row unless asked.");
+                Assert.AreEqual(ResultPanelLayout.StarRowDp, m.StarRow);
+                Assert.AreEqual(plain.Card.y + ResultPanelLayout.StarRowDp, m.Card.y, 0.001f, "Card grows by the row.");
+                Assert.LessOrEqual(m.Card.y, safe.y - 2f * ResultPanelLayout.MarginDp + 0.001f);
+
+                float titleBottom = m.TitleCentre.y - m.TitleHeight * 0.5f;
+                float rowTop = m.StarRowCentre.y + m.StarRow * 0.5f;
+                float rowBottom = m.StarRowCentre.y - m.StarRow * 0.5f;
+                float firstButtonTop = m.ButtonCentre(0).y + m.Button.y * 0.5f;
+                Assert.LessOrEqual(rowTop, titleBottom + 0.001f, "Under the title.");
+                Assert.GreaterOrEqual(rowBottom, firstButtonTop - 0.001f, "Above the buttons.");
+                Assert.GreaterOrEqual(m.StarRow, ResultPanelLayout.StarDp, "Stars fit the row.");
+                Assert.GreaterOrEqual(m.Button.y, ResultPanelLayout.MinTouchDp);
+            }
+        }
+
+        [Test]
         public void SafeAreaAnchors_AreFractionsOfTheScreen()
         {
             ResultPanelLayout.SafeAreaAnchors(new Rect(0f, 144f, 1080f, 2160f), 1080f, 2400f, out var min, out var max);

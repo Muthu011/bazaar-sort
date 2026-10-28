@@ -93,6 +93,10 @@ namespace Game.Tests.PlayMode
 
             Assert.IsTrue(board.TryMove(1, 1, 0)); // tumbler triple on s1 clears
             Assert.IsTrue(_view.IsShelfAnimating(0), "The clear plays on s1.");
+            // Issue #21: the moved tumbler first flies onto s1 (FeelMotion.ArcSeconds); the clear pops once it lands.
+            Assert.IsTrue(_view.IsShelfFlying(0));
+            _view.AdvanceAnimations(FeelMotion.ArcSeconds);
+            Assert.IsFalse(_view.IsShelfFlying(0), "Landed: the clear starts.");
             for (int slot = 0; slot < Shelf.SlotCount; slot++)
             {
                 Assert.AreEqual("T", _view.GetFrontLetter(0, slot), $"Slot {slot} still shows the tumbler as it starts to pop.");
@@ -118,7 +122,7 @@ namespace Game.Tests.PlayMode
         }
 
         [UnityTest]
-        public IEnumerator Clear_DrivenByFrames_FinishesInUnderHalfASecond()
+        public IEnumerator Clear_DrivenByFrames_FinishesInUnderHalfASecondAfterLanding()
         {
             var board = LoadW1L001();
             Bind(board);
@@ -126,10 +130,15 @@ namespace Game.Tests.PlayMode
 
             Assert.IsTrue(board.TryMove(1, 1, 0));
             float started = Time.time;
+            // Issue #21: the move's 0.25 s flight comes first; the clear itself is still timed from the landing.
+            while (_view.IsShelfFlying(0) && Time.time - started < 2f) yield return null;
+            float landed = Time.time;
             while (_view.IsAnimating && Time.time - started < 2f) yield return null;
 
             Assert.IsFalse(_view.IsAnimating);
-            Assert.Less(Time.time - started, 0.5f + 0.1f, "Clear finishes in about ClearSeconds (plus a frame or two).");
+            Assert.Less(Time.time - landed, 0.5f + 0.1f, "Clear finishes in about ClearSeconds (plus a frame or two).");
+            Assert.Less(Time.time - started, FeelMotion.ArcSeconds + ClearRevealMotion.ClearSeconds + 0.1f,
+                "Flight plus clear (plus a frame or two).");
             Assert.AreEqual(0, CountVisible(0));
         }
 
@@ -218,7 +227,8 @@ namespace Game.Tests.PlayMode
             Assert.IsFalse(_view.IsShelfRevealing(0));
             Assert.AreEqual(0, raised);
 
-            _view.AdvanceAnimations(ClearRevealMotion.ClearSeconds);
+            // Issue #21: s2's clear waits for the tawa's 0.25 s flight, which outlasts s1's 0.22 s reveal.
+            _view.AdvanceAnimations(ClearRevealMotion.ClearSeconds + FeelMotion.ArcSeconds - ClearRevealMotion.RevealSeconds);
             Assert.IsFalse(_view.IsAnimating);
             Assert.AreEqual(1, raised, "OutcomeReady once animations end.");
             Assert.AreEqual(BoardOutcome.Won, shown);
@@ -239,7 +249,8 @@ namespace Game.Tests.PlayMode
             Assert.IsTrue(board.TryMove(1, 0, 0)); // s1 clears
             Assert.IsTrue(_view.IsShelfAnimating(0));
             Assert.IsTrue(board.TryMove(2, 0, 0)); // idli stand onto the clearing shelf
-            Assert.IsFalse(_view.IsShelfAnimating(0), "Clear snapped to its end.");
+            // Issue #21: the clear snapped to its end; all that plays now is the idli stand's flight onto s1.
+            Assert.IsTrue(_view.IsShelfFlying(0), "Clear snapped to its end; only the new flight plays.");
             Assert.AreEqual("I", _view.GetFrontLetter(0, 0));
             Assert.IsNull(_view.GetFrontLetter(0, 1));
             Assert.AreEqual(1f, _view.GetFrontTileScale(0, 0));

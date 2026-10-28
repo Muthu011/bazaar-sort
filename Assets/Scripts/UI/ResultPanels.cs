@@ -1,4 +1,5 @@
 using System;
+using DG.Tweening;
 using Game.View;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -16,6 +17,12 @@ namespace Game.UI
     /// <see cref="ResultPanelChoice"/>: winning the last level shows More-levels-soon instead of Win), hides on
     /// <see cref="LevelBootstrap.LevelLoaded"/>, and turns button taps into <see cref="LevelBootstrap.Next"/>,
     /// <see cref="LevelBootstrap.Retry"/> and <see cref="LevelBootstrap.ReplayFromFirst"/>. Text uses Unity's built-in legacy font, like the board labels.
+    ///
+    /// Feel (issue #21): every button presses down (<see cref="ButtonPress"/>). The Win card has a row of
+    /// <see cref="UiFeel.WinStars"/> stars (always 3 for now, Muthu) that drop in one at a time with a scale punch,
+    /// then confetti falls (<see cref="ParticleFx.CreateConfetti"/>); More-levels-soon, also a win, gets the confetti.
+    /// The star drop is one DOTween sequence built once and restarted on every Win; outside play mode (screenshots)
+    /// the stars just show at rest.
     /// </summary>
     public sealed class ResultPanels : MonoBehaviour
     {
@@ -31,6 +38,11 @@ namespace Game.UI
         private const int MoreLevelsTitleLineCount = 2;
 
         private const int CanvasSortingOrder = 100;
+
+        /// <summary>Confetti draws over the result card (100), under the dev overlay (110).</summary>
+        private const int ConfettiSortingOrder = 105;
+
+        private static readonly Color32 StarColor = new Color32(0xFF, 0xB3, 0x00, 0xFF); // marigold
 
         private static readonly Color32 BackdropColor = new Color32(0x1B, 0x0F, 0x0C, 0xB0);
         private static readonly Color32 CardColor = new Color32(0xFF, 0xF8, 0xE1, 0xFF);
@@ -52,6 +64,10 @@ namespace Game.UI
         private Card _stuck;
         private Card _moreLevels;
         private bool _built;
+        private Sequence _stars;
+        private ParticleSystem _confetti;
+        private TweenCallback _playConfetti;
+        private int _confettiBursts;
         private BoardView _subscribedView;
         private LevelBootstrap _subscribedLevels;
         private bool _trackScreen = true;
@@ -133,13 +149,15 @@ namespace Game.UI
             _safeArea = new GameObject("Safe Area", typeof(RectTransform)).GetComponent<RectTransform>();
             _safeArea.SetParent(canvasObject.transform, false);
 
-            _win = new Card(_safeArea, "Win Panel", WinTitle, font, 2);
+            _win = new Card(_safeArea, "Win Panel", WinTitle, font, 2, UiFeel.WinStars);
             _win.SetButton(0, NextLabel, PrimaryColor, PrimaryText, OnNext);
             _win.SetButton(1, RetryLabel, SecondaryColor, SecondaryText, OnRetry);
             _stuck = new Card(_safeArea, "Stuck Panel", StuckTitle, font, 1);
             _stuck.SetButton(0, RetryLabel, PrimaryColor, PrimaryText, OnRetry);
             _moreLevels = new Card(_safeArea, "More Levels Panel", MoreLevelsTitleLines, font, 1);
             _moreLevels.SetButton(0, ReplayLabel, PrimaryColor, PrimaryText, OnReplay);
+
+            BuildFeel();
 
             if (ensureEventSystem && FindAnyObjectByType<EventSystem>() == null)
             {
@@ -187,7 +205,7 @@ namespace Game.UI
             _safeArea.offsetMax = Vector2.zero;
 
             var safeDp = new Vector2(safeAreaPx.width / density, safeAreaPx.height / density);
-            _win.Apply(ResultPanelLayout.Compute(safeDp, 2));
+            _win.Apply(ResultPanelLayout.Compute(safeDp, 2, 1, ResultPanelLayout.StarRowDp));
             _stuck.Apply(ResultPanelLayout.Compute(safeDp, 1));
             _moreLevels.Apply(ResultPanelLayout.Compute(safeDp, 1, MoreLevelsTitleLineCount));
         }
@@ -209,6 +227,75 @@ namespace Game.UI
             _stuck.Root.SetActive(panel == ResultPanel.Stuck);
             _moreLevels.Root.SetActive(panel == ResultPanel.MoreLevelsSoon);
             _backdrop.SetActive(panel != ResultPanel.None);
+
+            StopConfetti();
+            if (panel == ResultPanel.Win) PlayStars();
+            else if (_stars != null) _stars.Pause();
+            if (panel == ResultPanel.MoreLevelsSoon) PlayConfetti();
+        }
+
+        // ---- Stars and confetti (issue #21) ----
+
+        private void BuildFeel()
+        {
+            _win.ShowStarsAtRest();
+            if (!Tweens.IsReady) return;
+
+            _playConfetti = PlayConfetti;
+            _confetti = ParticleFx.CreateConfetti("Win Confetti", ConfettiSortingOrder);
+            _confetti.transform.SetParent(transform, false);
+
+            _stars = DOTween.Sequence().SetAutoKill(false).SetRecyclable(false).SetLink(gameObject).Pause();
+            for (int i = 0; i < _win.Stars.Length; i++)
+            {
+                var star = _win.Stars[i];
+                var rect = star.rectTransform;
+                float start = UiFeel.StarStart(i);
+                _stars.Insert(start, star.DOFade(1f, 0.06f));
+                _stars.Insert(start, rect.DOAnchorPos(_win.StarRest(i), UiFeel.StarDropSeconds).SetEase(Ease.InQuad));
+                _stars.Insert(start + UiFeel.StarDropSeconds,
+                    rect.DOPunchScale(new Vector3(UiFeel.StarPunch, UiFeel.StarPunch, 0f), UiFeel.StarPunchSeconds, 6, 0.5f));
+            }
+            _stars.InsertCallback(UiFeel.StarsSeconds, _playConfetti);
+        }
+
+        private void PlayStars()
+        {
+            if (_stars == null)
+            {
+                _win.ShowStarsAtRest();
+                return;
+            }
+            _win.PrepareStarDrop();
+            _stars.Restart();
+        }
+
+        private void PlayConfetti()
+        {
+            if (_confetti == null) return;
+            // World units are pixels / 100 (BoardView's camera); rain from just above the top edge, across the width.
+            float width = _camera.pixelWidth / BoardView.PixelsPerUnit;
+            float height = _camera.pixelHeight / BoardView.PixelsPerUnit;
+            float k = width / 10.8f; // sizes tuned on a 1080 px wide screen
+            _confetti.transform.position = new Vector3(width * 0.5f, height + 0.3f * k, 0f);
+            var shape = _confetti.shape;
+            shape.scale = new Vector3(width, 0.1f, 0.1f);
+            var main = _confetti.main;
+            main.startSize = new ParticleSystem.MinMaxCurve(0.14f * k, 0.3f * k);
+            main.startSpeed = new ParticleSystem.MinMaxCurve(1.5f * k, 4f * k);
+            _confetti.Play();
+            _confetti.Emit(ParticleFx.ConfettiCount);
+            _confettiBursts++;
+        }
+
+        private void StopConfetti()
+        {
+            if (_confetti != null) _confetti.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+        }
+
+        private void OnDestroy()
+        {
+            if (_stars != null && _stars.IsActive()) _stars.Kill();
         }
 
         public void Hide() => Show(ResultPanel.None);
@@ -266,6 +353,42 @@ namespace Game.UI
         internal RectTransform StuckCard => _stuck.Rect;
         internal Canvas Canvas => _canvas;
 
+        /// <summary>Win card stars (always <see cref="UiFeel.WinStars"/>).</summary>
+        internal Image[] WinStars => _win.Stars;
+
+        /// <summary>True while the stars are still dropping.</summary>
+        internal bool AreStarsPlaying => _stars != null && _stars.IsPlaying();
+
+        /// <summary>True when every Win star is shown, opaque, at full size and in its place.</summary>
+        internal bool AreStarsAtRest => _win.StarsAtRest();
+
+        internal int ConfettiBursts => _confettiBursts;
+        internal ParticleSystem Confetti => _confetti;
+
+        /// <summary>Finishes the star drop at once, confetti included (tests, screenshots).</summary>
+        internal void CompleteStars()
+        {
+            if (_stars != null && _stars.IsPlaying()) _stars.Complete(true);
+        }
+
+        /// <summary>Jumps the star drop to <paramref name="seconds"/> and holds it there (screenshots).</summary>
+        internal void GotoStars(float seconds)
+        {
+            if (_stars != null) _stars.Goto(seconds, false);
+        }
+
+        internal Button[] AllButtons
+        {
+            get
+            {
+                var all = new Button[_win.Buttons.Length + _stuck.Buttons.Length + _moreLevels.Buttons.Length];
+                _win.Buttons.CopyTo(all, 0);
+                _stuck.Buttons.CopyTo(all, _win.Buttons.Length);
+                _moreLevels.Buttons.CopyTo(all, _win.Buttons.Length + _stuck.Buttons.Length);
+                return all;
+            }
+        }
+
         // ---- Building blocks ----
 
         private static Image CreateImage(Transform parent, string name, Color32 color, bool rounded)
@@ -316,10 +439,12 @@ namespace Game.UI
             public readonly RectTransform Rect;
             public readonly Button[] Buttons;
             public readonly Text Title;
+            public readonly Image[] Stars;
             private readonly RectTransform _title;
+            private readonly RectTransform _starRow;
             private readonly Font _font;
 
-            public Card(Transform parent, string name, string title, Font font, int buttonCount)
+            public Card(Transform parent, string name, string title, Font font, int buttonCount, int starCount = 0)
             {
                 _font = font;
                 var background = CreateImage(parent, name, CardColor, true);
@@ -333,6 +458,22 @@ namespace Game.UI
                 _title = titleText.rectTransform;
                 _title.anchorMin = _title.anchorMax = new Vector2(0.5f, 0.5f);
 
+                Stars = new Image[starCount];
+                if (starCount > 0)
+                {
+                    _starRow = new GameObject("Stars", typeof(RectTransform)).GetComponent<RectTransform>();
+                    _starRow.SetParent(Rect, false);
+                    _starRow.anchorMin = _starRow.anchorMax = new Vector2(0.5f, 0.5f);
+                    for (int i = 0; i < starCount; i++)
+                    {
+                        var star = UiParts.Image(_starRow, "Star " + i, StarColor, PlaceholderSprites.Star, sliced: false);
+                        star.raycastTarget = false;
+                        star.rectTransform.anchorMin = star.rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
+                        star.rectTransform.sizeDelta = new Vector2(ResultPanelLayout.StarDp, ResultPanelLayout.StarDp);
+                        Stars[i] = star;
+                    }
+                }
+
                 Buttons = new Button[buttonCount];
                 for (int i = 0; i < buttonCount; i++)
                 {
@@ -341,8 +482,50 @@ namespace Game.UI
                     rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0.5f);
                     var button = image.gameObject.AddComponent<Button>();
                     button.targetGraphic = image;
+                    image.gameObject.AddComponent<ButtonPress>();
                     Buttons[i] = button;
                 }
+            }
+
+            /// <summary>Where star <paramref name="index"/> rests inside the star row (fixed, so tweens can keep their end values).</summary>
+            public Vector2 StarRest(int index)
+            {
+                float step = ResultPanelLayout.StarDp + ResultPanelLayout.StarGapDp;
+                return new Vector2((index - (Stars.Length - 1) * 0.5f) * step, 0f);
+            }
+
+            public void ShowStarsAtRest()
+            {
+                for (int i = 0; i < Stars.Length; i++) SetStar(i, StarRest(i), 1f);
+            }
+
+            /// <summary>Every star hidden above its place: the state the drop sequence starts from.</summary>
+            public void PrepareStarDrop()
+            {
+                for (int i = 0; i < Stars.Length; i++) SetStar(i, StarRest(i) + new Vector2(0f, UiFeel.StarDropDp), 0f);
+            }
+
+            public bool StarsAtRest()
+            {
+                if (Stars.Length == 0) return false;
+                for (int i = 0; i < Stars.Length; i++)
+                {
+                    var star = Stars[i];
+                    if (!star.gameObject.activeInHierarchy || star.color.a < 0.999f) return false;
+                    if (Vector2.Distance(star.rectTransform.anchoredPosition, StarRest(i)) > 0.01f) return false;
+                    if (Mathf.Abs(star.rectTransform.localScale.x - 1f) > 0.001f) return false;
+                }
+                return true;
+            }
+
+            private void SetStar(int index, Vector2 position, float alpha)
+            {
+                var star = Stars[index];
+                star.rectTransform.anchoredPosition = position;
+                star.rectTransform.localScale = Vector3.one;
+                var c = star.color;
+                c.a = alpha;
+                star.color = c;
             }
 
             public void SetButton(int index, string label, Color32 color, Color32 textColor, UnityEngine.Events.UnityAction onClick)
@@ -360,6 +543,7 @@ namespace Game.UI
                 Rect.anchoredPosition = Vector2.zero;
                 _title.sizeDelta = new Vector2(metrics.Card.x - 2f * metrics.Padding, metrics.TitleHeight);
                 _title.anchoredPosition = metrics.TitleCentre;
+                if (_starRow != null) _starRow.anchoredPosition = metrics.StarRowCentre;
                 for (int i = 0; i < Buttons.Length; i++)
                 {
                     var rect = (RectTransform)Buttons[i].transform;

@@ -75,6 +75,16 @@ namespace Game.EditorTools
             panels.Configure(view, bootstrap, camera);
             EditorUtility.SetDirty(panels);
 
+            var effectsObject = new GameObject("Board Effects");
+            var effects = effectsObject.AddComponent<BoardEffects>();
+            effects.Configure(view);
+            EditorUtility.SetDirty(effects);
+
+            var hudObject = new GameObject("HUD");
+            var hud = hudObject.AddComponent<GameHud>();
+            hud.Configure(view, bootstrap, camera);
+            EditorUtility.SetDirty(hud);
+
             new GameObject("EventSystem", typeof(EventSystem), typeof(InputSystemUIInputModule));
 
             EditorSceneManager.SaveScene(scene, ScenePath);

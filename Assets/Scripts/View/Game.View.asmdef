@@ -4,6 +4,7 @@
     "references": [
         "Game.Core",
         "Game.Levels",
+        "Game.Services",
         "Unity.InputSystem"
     ],
     "includePlatforms": [],

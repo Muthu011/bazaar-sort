@@ -5,14 +5,22 @@ namespace Game.UI
     /// <summary>Sizes of a result panel card, in dp (the panel canvas works in dp: 1 canvas unit = 1 dp).</summary>
     public readonly struct ResultPanelMetrics
     {
-        public ResultPanelMetrics(Vector2 card, float titleHeight, Vector2 button, float buttonGap, float padding)
+        public ResultPanelMetrics(Vector2 card, float titleHeight, Vector2 button, float buttonGap, float padding,
+            float starRow = 0f)
         {
             Card = card;
             TitleHeight = titleHeight;
             Button = button;
             ButtonGap = buttonGap;
             Padding = padding;
+            StarRow = starRow;
         }
+
+        /// <summary>Height of the star row between the title and the buttons (Win panel), or 0 when there is none.</summary>
+        public float StarRow { get; }
+
+        /// <summary>Centre of the star row relative to the card centre.</summary>
+        public Vector2 StarRowCentre => new Vector2(0f, Card.y * 0.5f - Padding - TitleHeight - StarRow * 0.5f);
 
         /// <summary>Card size; the card is centred in the safe area.</summary>
         public Vector2 Card { get; }
@@ -32,7 +40,7 @@ namespace Game.UI
         /// </summary>
         public Vector2 ButtonCentre(int index)
         {
-            float top = Card.y * 0.5f - Padding - TitleHeight - ButtonGap;
+            float top = Card.y * 0.5f - Padding - TitleHeight - StarRow - ButtonGap;
             float y = top - Button.y * 0.5f - index * (Button.y + ButtonGap);
             return new Vector2(0f, y);
         }
@@ -70,11 +78,17 @@ namespace Game.UI
         /// <summary>Button label font size in dp.</summary>
         public const int ButtonFontDp = 22;
 
+        /// <summary>Height of the Win panel's star row (issue #21), and the star size inside it.</summary>
+        public const float StarRowDp = 64f;
+        public const float StarDp = 52f;
+        public const float StarGapDp = 12f;
+
         /// <summary>
         /// Card and button sizes for a safe area of <paramref name="safeSizeDp"/> with <paramref name="buttonCount"/>
-        /// buttons and a title of <paramref name="titleLines"/> lines.
+        /// buttons and a title of <paramref name="titleLines"/> lines, with a star row of <paramref name="starRowDp"/>
+        /// (0 for none) under the title.
         /// </summary>
-        public static ResultPanelMetrics Compute(Vector2 safeSizeDp, int buttonCount, int titleLines = 1)
+        public static ResultPanelMetrics Compute(Vector2 safeSizeDp, int buttonCount, int titleLines = 1, float starRowDp = 0f)
         {
             if (buttonCount < 1) buttonCount = 1;
             if (titleLines < 1) titleLines = 1;
@@ -86,25 +100,26 @@ namespace Game.UI
 
             float buttonHeight = ButtonHeightDp;
             float title = TitleHeightDp + extraLines;
-            float height = Height(title, buttonHeight, buttonCount);
+            float stars = Mathf.Max(0f, starRowDp);
+            float height = Height(title, buttonHeight, buttonCount) + stars;
 
             // Very short safe areas (landscape, split screen): give up title room first, then button room down to
             // the touch floor. Below that the card may overflow; portrait phones never get there.
             if (height > maxHeight)
             {
                 title = Mathf.Max(MinTitleHeightDp + extraLines, title - (height - maxHeight));
-                height = Height(title, buttonHeight, buttonCount);
+                height = Height(title, buttonHeight, buttonCount) + stars;
             }
             if (height > maxHeight)
             {
                 float perButton = (height - maxHeight) / buttonCount;
                 buttonHeight = Mathf.Max(MinTouchDp, buttonHeight - perButton);
-                height = Height(title, buttonHeight, buttonCount);
+                height = Height(title, buttonHeight, buttonCount) + stars;
             }
 
             float buttonWidth = Mathf.Max(MinTouchDp, cardWidth - 2f * PaddingDp);
             return new ResultPanelMetrics(new Vector2(cardWidth, height), title, new Vector2(buttonWidth, buttonHeight),
-                ButtonGapDp, PaddingDp);
+                ButtonGapDp, PaddingDp, stars);
         }
 
         private static float Height(float title, float button, int count)
