@@ -15,8 +15,8 @@ Checks were run by the producer session through Unity MCP. The `qa-tester` agent
 | 2D URP | PASS | UniversalRP.asset uses Renderer2D; unchanged |
 | Portrait only | PASS | Default orientation Portrait; upside-down and landscape autorotate off |
 | Package id | PASS | `com.muthu.bazaarsort` (Android and Standalone) |
-| Android target selected | **BLOCKED** | Android Build Support module not installed in this editor |
-| Console clean | PASS* | *Only entry is the expected warning from `Bazaar Sort/Apply Project Settings` about the missing Android module |
+| Android target selected | PASS | Re-run 2026-10-28 after Android Build Support (SDK, NDK, OpenJDK) was installed: `Bazaar Sort/Apply Project Settings` switched the active target; `EditorUserBuildSettings.activeBuildTarget` = `Android` |
+| Console clean | PASS | 0 errors, 0 warnings after the switch and both test runs |
 | Levels / solver | n/a | No level changes |
 | Frame time / build size | n/a | No gameplay scene yet; no Android build possible without the module |
 | Screenshots | n/a | No screens changed |
@@ -24,4 +24,9 @@ Checks were run by the producer session through Unity MCP. The `qa-tester` agent
 ## Known pre-existing noise
 - `Curl error 16: Sending data failed with unitytls error code 10` appears occasionally from the editor's network layer. It isn't caused by this branch.
 
-RESULT: PASS (except the Android-target item, which is blocked on installing the module)
+## Re-run after Android module install (2026-10-28)
+- Active build target: Android (package id `com.muthu.bazaarsort`, default orientation Portrait), checked in the editor through Unity MCP.
+- The active build target is stored in `Library/`, which is per machine and not in git, so no tracked project files changed. Run `Bazaar Sort/Apply Project Settings` once on any new checkout.
+- Edit Mode 6/6 and Play Mode 1/1 pass under the Android target.
+
+RESULT: PASS
