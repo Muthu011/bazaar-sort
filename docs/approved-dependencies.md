@@ -9,6 +9,7 @@ Agents may only add what is listed here. To propose something new, open an issue
 | Unity Input System | Input | |
 | Newtonsoft Json (`com.unity.nuget.newtonsoft-json`, Unity's official package) | Level JSON parsing in `Game.Levels` | Approved by Muthu 2026-10-28. Not used in `Game.Core` |
 | TextMeshPro | Text | |
+| uGUI (`com.unity.ugui`) | UI panels, HUD, buttons | built in. Approved by Muthu 2026-10-28 |
 | DOTween (free) or Unity's own tweening code | Animation | pick one in week 1 |
 | MCP for Unity (CoplayDev, MIT) | Editor bridge for agents | editor-only, excluded from builds |
 | Unity IAP | Purchases | |

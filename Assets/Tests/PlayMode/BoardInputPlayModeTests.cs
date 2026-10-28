@@ -68,6 +68,18 @@ namespace Game.Tests.PlayMode
             Assert.Less(Vector2.Distance(expected, actual), 0.01f, $"{message} expected {expected} but was {actual}");
         }
 
+        /// <summary>Clears and reveals animate (issue #6); the drawn board settles a moment after the move.</summary>
+        private IEnumerator WaitForAnimations()
+        {
+            float waited = 0f;
+            while (_view.IsAnimating && waited < 2f)
+            {
+                waited += Time.unscaledDeltaTime;
+                yield return null;
+            }
+            Assert.IsFalse(_view.IsAnimating, "Clear and reveal animations finish.");
+        }
+
         private IEnumerator Click(Vector2 position)
         {
             Move(_mouse.position, position);
@@ -118,6 +130,7 @@ namespace Game.Tests.PlayMode
             yield return TapTap(3, 1, 1); // idli stand s4 -> s2, clears and wins
 
             Assert.IsTrue(_board.IsWon, "w1_l001 is won through tap-tap input.");
+            yield return WaitForAnimations();
             Assert.AreEqual(0, _view.VisibleFrontTileCount);
             Assert.AreEqual(BoardView.WonText, _view.StatusText);
         }
