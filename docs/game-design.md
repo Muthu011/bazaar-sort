@@ -24,6 +24,15 @@ Undo, Shuffle, Extra Slot (temporary 6th slot) at launch; Magnet and Time Freeze
 Pongal pack (10 levels, at launch): Pongal pot, sugarcane, turmeric plant, kolam powder, banana, rice sack, jaggery, cow bells, flowers, clay stove.
 4. Wedding Season (61–80) and 5. Festival India (81–100+) arrive as weekly updates.
 
+### Object ids (master list)
+Level files may only use these ids (snake_case, case-sensitive). The code copy is `ObjectCatalog` in `Assets/Scripts/Levels/`; keep the two in step. Add a world's ids when its levels are made.
+- World 1, Amma's Kitchen (confirmed by Muthu, 28 Oct 2026): `tumbler` (filter coffee tumbler, dabara set), `pressure_cooker`, `idli_stand`, `tawa`, `masala_dabba`, `steel_tiffin`, `coconut_scraper`, `brass_kudam`, `rolling_pin` (belan), `chai_kettle`.
+
+### Level rules (decided 28 Oct 2026)
+- A level must never start with a ready-made triple in a front row. This includes a shelf whose front row is empty and whose next non-empty layer is a triple, because that layer moves forward at start. The level loader rejects such levels; triples in deeper layers are fine.
+- Dropping an item back on the shelf it came from is a cancel: no move counted, no shake.
+- Shelf kinds: only `normal` is supported. The loader rejects `locked` (enabled in Slice 2) and `conveyor` (after launch) with a "not supported yet" error.
+
 ## FTUE (first-time user flow)
 L1: one rule, "Match 3!", hand pointer. L2: hidden layer, no text. L3: first win, stars + coins. L5: Undo taught free. L7: designed near-loss, Extra Slot free once. L10 boss: Pongal kitchen, first album card (album UI ships in February). No interstitial before level 12 or after a fail. Notification permission asked after level 10.
 
