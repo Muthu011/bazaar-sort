@@ -175,19 +175,9 @@ namespace Game.Solver
 
             if (!budget.Exhausted)
             {
-                var oracle = new LivenessOracle(context, options.LivenessNodeBudget, budget);
-                if (analysis.Shortest.Solvability == Solvability.Solvable)
-                {
-                    // Every state on a winning line is alive.
-                    var replay = context.Root;
-                    oracle.MarkAlive(replay);
-                    foreach (var move in analysis.Shortest.Solution)
-                    {
-                        replay = SearchContext.Apply(replay, move);
-                        oracle.MarkAlive(replay);
-                    }
-                }
-                analysis.Plays = PlaySimulator.Run(context, options, oracle, budget);
+                // Every state on a winning line is alive.
+                var line = analysis.Shortest.Solvability == Solvability.Solvable ? analysis.Shortest.Solution : null;
+                analysis.Plays = PlaySimulator.Run(context, options, line, budget);
             }
 
             analysis.BudgetNodesUsed = budget.Used;

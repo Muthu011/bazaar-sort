@@ -54,6 +54,14 @@ namespace Game.Solver
         /// <summary>Shortest-solution search: wall-clock limit in seconds before giving up with Unknown.</summary>
         public double TimeLimitSeconds { get; set; } = 60;
 
+        /// <summary>
+        /// Threads for the simulated plays; 0 picks one per processor, at most 4 (more measured no faster, as the
+        /// threads share Mono's garbage collector). The numbers do not depend on it: each play has its own seed and
+        /// every dead-end answer is a fact about the board. Only the count of boards built (and so when the level node
+        /// budget runs out) varies, since threads may each search the same dead end.
+        /// </summary>
+        public int Threads { get; set; }
+
         /// <summary>Simulated plays for estWinRate and deadEndRate.</summary>
         public int Plays { get; set; } = DefaultPlays;
 
@@ -92,10 +100,14 @@ namespace Game.Solver
     /// Once either runs out, <see cref="Exhausted"/> stays true, <see cref="Reason"/> says which, and every phase stops
     /// and reports Unknown / incomplete instead of continuing.
     /// </summary>
+    /// Safe to charge from several threads (the simulated plays run in parallel).
     public sealed class SearchBudget
     {
         private readonly System.Diagnostics.Stopwatch _stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        private readonly object _lock = new object();
+        private long _used;
         private int _sinceClockCheck;
+        private volatile string _reason;
 
         public SearchBudget(long maxNodes, double timeLimitSeconds)
         {
@@ -114,29 +126,27 @@ namespace Game.Solver
         public double TimeLimitSeconds { get; }
 
         /// <summary>Nodes charged so far, over all phases.</summary>
-        public long Used { get; private set; }
+        public long Used => System.Threading.Interlocked.Read(ref _used);
 
-        public double ElapsedSeconds => _stopwatch.Elapsed.TotalSeconds;
+        public double ElapsedSeconds => _stopwatch.Elapsed.TotalSeconds; // reading a running Stopwatch is thread-safe
 
         /// <summary>Why the budget ran out; null while it lasts.</summary>
-        public string Reason { get; private set; }
+        public string Reason => _reason;
 
-        public bool Exhausted => Reason != null;
+        public bool Exhausted => _reason != null;
 
         /// <summary>Counts <paramref name="nodes"/> more nodes. Returns false once the budget has run out.</summary>
         public bool Charge(long nodes = 1)
         {
-            if (Reason != null) return false;
-            Used += nodes;
-            if (Used > MaxNodes)
+            if (_reason != null) return false;
+            if (System.Threading.Interlocked.Add(ref _used, nodes) > MaxNodes)
             {
-                Reason = $"level node budget of {MaxNodes} boards ran out";
+                RunOut($"level node budget of {MaxNodes} boards ran out");
                 return false;
             }
-            _sinceClockCheck += (int)Math.Min(nodes, 1024);
-            if (_sinceClockCheck >= 256)
+            if (System.Threading.Interlocked.Add(ref _sinceClockCheck, (int)Math.Min(nodes, 1024)) >= 256)
             {
-                _sinceClockCheck = 0;
+                System.Threading.Interlocked.Exchange(ref _sinceClockCheck, 0);
                 return CheckClock();
             }
             return true;
@@ -145,13 +155,25 @@ namespace Game.Solver
         /// <summary>Checks the wall clock now. Returns false once the budget has run out.</summary>
         public bool CheckClock()
         {
-            if (Reason != null) return false;
-            if (_stopwatch.Elapsed.TotalSeconds > TimeLimitSeconds)
+            if (_reason != null) return false;
+            if (ElapsedSeconds > TimeLimitSeconds)
             {
-                Reason = $"level time limit of {TimeLimitSeconds:0.#} s ran out";
+                RunOut($"level time limit of {TimeLimitSeconds:0.#} s ran out");
                 return false;
             }
             return true;
+        }
+
+        /// <summary>Stops every phase now, with <paramref name="reason"/> (unless the budget already ran out).</summary>
+        public void Stop(string reason) => RunOut(reason);
+
+        // The first reason wins.
+        private void RunOut(string reason)
+        {
+            lock (_lock)
+            {
+                if (_reason == null) _reason = reason;
+            }
         }
     }
 

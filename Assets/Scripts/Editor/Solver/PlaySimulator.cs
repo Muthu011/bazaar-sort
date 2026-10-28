@@ -98,37 +98,161 @@ namespace Game.Solver
         {
             if (root == null) throw new ArgumentNullException(nameof(root));
             options = options ?? SolverOptions.Default;
-            var context = new SearchContext(root, pinnedShelves);
-            var budget = SearchBudget.For(options);
-            return Run(context, options, new LivenessOracle(context, options.LivenessNodeBudget, budget), budget);
+            return Run(new SearchContext(root, pinnedShelves), options, null, SearchBudget.For(options));
         }
 
-        internal static PlayStats Run(SearchContext context, SolverOptions options, LivenessOracle oracle,
-            SearchBudget budget)
+        /// <summary>
+        /// Runs the plays on <see cref="SolverOptions.Threads"/> threads. Each thread has its own search context and
+        /// dead-end oracle; the plays are independent (own seed each) and every alive/dead answer is a fact about the
+        /// board, so the merged numbers are the same for any thread count. <paramref name="winningLine"/> (optional)
+        /// is a known winning line from the root: its states are alive.
+        /// </summary>
+        internal static PlayStats Run(SearchContext context, SolverOptions options,
+            IReadOnlyList<SolverMove> winningLine, SearchBudget budget)
         {
-            var root = context.Root;
-            // 1 = alive, 0 = dead, -1 = unknown (a known answer is never overwritten by unknown).
-            var status = new Dictionary<StateKey, sbyte>();
-            int wins = 0, stuck = 0, circling = 0, tooLong = 0;
+            int threads = options.Threads > 0 ? options.Threads : Math.Min(Environment.ProcessorCount, 4);
+            threads = Math.Max(1, Math.Min(threads, options.Plays));
 
-            var moves = new List<SolverMove>();
-            var clearing = new List<SolverMove>();
-            // Candidate moves are tried on one scratch board (Board.CopyStateFrom + Board.TryMove); only the move
-            // the player makes is kept as a board of its own.
-            var scratch = root.Clone();
-            var seen = new HashSet<StateKey>();
-            var pathBoards = new List<Board>();
-            var pathKeys = new List<StateKey>();
-
-            int playsRun = 0;
-            for (int p = 0; p < options.Plays && !budget.Exhausted; p++)
+            var workers = new Worker[threads];
+            for (int w = 0; w < threads; w++)
             {
-                var rng = new SplitMix64(Hashing.Mix(options.Seed) ^ Hashing.Mix((ulong)p + 1));
+                workers[w] = new Worker(w == 0 ? context : context.CreateSibling(), options, winningLine, budget);
+            }
+
+            int nextPlay = -1;
+            Exception failure = null;
+            void Work(Worker worker)
+            {
+                try
+                {
+                    while (!budget.Exhausted)
+                    {
+                        int p = System.Threading.Interlocked.Increment(ref nextPlay);
+                        if (p >= options.Plays) break;
+                        worker.Play(p);
+                    }
+                }
+                catch (Exception e)
+                {
+                    System.Threading.Interlocked.CompareExchange(ref failure, e, null);
+                    budget.Stop("a simulated play failed: " + e.Message);
+                }
+            }
+
+            if (threads == 1)
+            {
+                Work(workers[0]);
+            }
+            else
+            {
+                var started = new System.Threading.Thread[threads - 1];
+                for (int w = 1; w < threads; w++)
+                {
+                    var worker = workers[w];
+                    started[w - 1] = new System.Threading.Thread(() => Work(worker), 16 * 1024 * 1024)
+                    {
+                        IsBackground = true,
+                        Name = "Bazaar Sort solver plays " + w,
+                    };
+                    started[w - 1].Start();
+                }
+                Work(workers[0]);
+                foreach (var thread in started) thread.Join();
+            }
+            if (failure != null) throw new InvalidOperationException("Simulated plays failed.", failure);
+
+            // Merge: a known answer is never overwritten by unknown.
+            var status = workers[0].Status;
+            int wins = 0, stuck = 0, circling = 0, tooLong = 0, playsRun = 0;
+            foreach (var worker in workers)
+            {
+                wins += worker.Wins;
+                stuck += worker.Stuck;
+                circling += worker.Circling;
+                tooLong += worker.TooLong;
+                playsRun += worker.PlaysRun;
+                if (worker.Status == status) continue;
+                foreach (var pair in worker.Status)
+                {
+                    if (pair.Value < 0 && status.ContainsKey(pair.Key)) continue;
+                    status[pair.Key] = pair.Value;
+                }
+            }
+
+            int alive = 0, dead = 0, unknown = 0;
+            foreach (var value in status.Values)
+            {
+                if (value == 1) alive++;
+                else if (value == 0) dead++;
+                else unknown++;
+            }
+
+            return new PlayStats(options.Plays, wins, stuck, circling, tooLong, alive, dead, unknown, playsRun,
+                budget.Reason);
+        }
+
+        /// <summary>One thread's share of the plays: its own context, oracle, scratch board and results.</summary>
+        private sealed class Worker
+        {
+            private readonly SearchContext _context;
+            private readonly SolverOptions _options;
+            private readonly SearchBudget _budget;
+            private readonly LivenessOracle _oracle;
+            private readonly List<SolverMove> _moves = new List<SolverMove>();
+            private readonly List<SolverMove> _clearing = new List<SolverMove>();
+            private readonly HashSet<StateKey> _seen = new HashSet<StateKey>();
+            private readonly List<Board> _pathBoards = new List<Board>();
+            private readonly List<StateKey> _pathKeys = new List<StateKey>();
+            // Candidate moves are tried on one scratch board (Board.CopyStateFrom + Board.TryMove); only the move the
+            // player makes is kept as a board of its own.
+            private readonly Board _scratch;
+
+            public Worker(SearchContext context, SolverOptions options, IReadOnlyList<SolverMove> winningLine,
+                SearchBudget budget)
+            {
+                _context = context;
+                _options = options;
+                _budget = budget;
+                _oracle = new LivenessOracle(context, options.LivenessNodeBudget, budget);
+                _scratch = context.Root.Clone();
+                if (winningLine != null)
+                {
+                    var replay = context.Root;
+                    _oracle.MarkAlive(replay);
+                    foreach (var move in winningLine)
+                    {
+                        replay = SearchContext.Apply(replay, move);
+                        _oracle.MarkAlive(replay);
+                    }
+                }
+            }
+
+            /// <summary>1 = alive, 0 = dead, -1 = unknown, by <see cref="SearchContext.PlayKey"/>.</summary>
+            public Dictionary<StateKey, sbyte> Status { get; } = new Dictionary<StateKey, sbyte>();
+
+            public int Wins { get; private set; }
+            public int Stuck { get; private set; }
+            public int Circling { get; private set; }
+            public int TooLong { get; private set; }
+            public int PlaysRun { get; private set; }
+
+            public void Play(int p)
+            {
+                var context = _context;
+                var budget = _budget;
+                var moves = _moves;
+                var clearing = _clearing;
+                var seen = _seen;
+                var pathBoards = _pathBoards;
+                var pathKeys = _pathKeys;
+                var scratch = _scratch;
+
+                var rng = new SplitMix64(Hashing.Mix(_options.Seed) ^ Hashing.Mix((ulong)p + 1));
                 seen.Clear();
                 pathBoards.Clear();
                 pathKeys.Clear();
 
-                var board = root;
+                var board = context.Root;
                 var key = context.PlayKey(board);
                 Outcome outcome;
                 while (true)
@@ -143,7 +267,7 @@ namespace Game.Solver
                     pathBoards.Add(board);
                     pathKeys.Add(key);
 
-                    if (pathBoards.Count > options.MaxPlayMoves)
+                    if (pathBoards.Count > _options.MaxPlayMoves)
                     {
                         outcome = Outcome.TooLong;
                         break;
@@ -204,38 +328,27 @@ namespace Game.Solver
                     key = nextKey;
                 }
 
-                if (budget.Exhausted) break; // this play was cut short by the level budget: not counted
+                if (budget.Exhausted) return; // this play was cut short by the level budget: not counted
 
-                playsRun++;
+                PlaysRun++;
                 switch (outcome)
                 {
                     case Outcome.Won:
-                        wins++;
+                        Wins++;
                         for (int i = 0; i < pathKeys.Count; i++)
                         {
-                            status[pathKeys[i]] = 1;
-                            oracle.MarkAlive(pathBoards[i]);
+                            Status[pathKeys[i]] = 1;
+                            _oracle.MarkAlive(pathBoards[i]);
                         }
                         break;
                     default:
-                        if (outcome == Outcome.Stuck) stuck++;
-                        else if (outcome == Outcome.Circling) circling++;
-                        else tooLong++;
-                        ClassifyLostPlay(pathBoards, pathKeys, oracle, status);
+                        if (outcome == Outcome.Stuck) Stuck++;
+                        else if (outcome == Outcome.Circling) Circling++;
+                        else TooLong++;
+                        ClassifyLostPlay(pathBoards, pathKeys, _oracle, Status);
                         break;
                 }
             }
-
-            int alive = 0, dead = 0, unknown = 0;
-            foreach (var value in status.Values)
-            {
-                if (value == 1) alive++;
-                else if (value == 0) dead++;
-                else unknown++;
-            }
-
-            return new PlayStats(options.Plays, wins, stuck, circling, tooLong, alive, dead, unknown, playsRun,
-                budget.Reason);
         }
 
         private static void TryOn(Board scratch, Board board, SolverMove move)

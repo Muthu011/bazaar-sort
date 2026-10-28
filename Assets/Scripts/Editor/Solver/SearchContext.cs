@@ -214,6 +214,17 @@ namespace Game.Solver
         /// </summary>
         public Board Root { get; }
 
+        /// <summary>
+        /// A context for another thread over the same puzzle: same type ids, pins and keys, its own scratch space and
+        /// its own root board (boards of one context must not be used with the other).
+        /// </summary>
+        public SearchContext CreateSibling()
+        {
+            var sibling = new SearchContext(Root, _pinned, _canonical);
+            Array.Copy(_playPinned, sibling._playPinned, _playPinned.Length);
+            return sibling;
+        }
+
         public int ShelfCount { get; }
 
         /// <summary>Distinct item types on the board; type ids run 1..TypeCount (0 is an empty slot).</summary>
