@@ -15,7 +15,8 @@ namespace Game.Tests.PlayMode
     /// <summary>
     /// Win and Stuck panels end to end: real pointer input through <see cref="BoardInput"/> wins or sticks the board,
     /// the panel shows once the animations end, and its buttons (clicked through the EventSystem with the Input System
-    /// UI module) Retry or load the Next level through <see cref="LevelBootstrap"/>.
+    /// UI module) Retry or load the Next level through <see cref="LevelBootstrap"/>. Winning the last level shows
+    /// "More levels coming soon" whose Replay loads w1_l001; Next never loops.
     /// </summary>
     public class ResultPanelsPlayModeTests : InputTestFixture
     {
@@ -153,6 +154,24 @@ namespace Game.Tests.PlayMode
             yield return WaitForOutcome();
         }
 
+        private IEnumerator WinW1L005()
+        {
+            // Winning line from Assets/Levels/World1/pack-1.md (18 moves).
+            int[] line = { 3,1,5, 0,0,1, 4,1,0, 0,0,1, 0,1,2, 1,2,2, 0,2,1, 1,0,0, 3,0,1, 0,0,2, 1,0,0, 0,0,2, 1,1,0, 0,0,1, 1,0,2, 4,0,1, 2,1,1, 3,2,2 };
+            var board = _view.Board;
+            int moves = 0;
+            void Count(MoveInfo _) => moves++;
+            board.Moved += Count;
+            for (int i = 0; i < line.Length; i += 3)
+            {
+                yield return TapTap(line[i], line[i + 1], line[i + 2]);
+                Assert.AreEqual(i / 3 + 1, moves, $"Move {i / 3 + 1} ({line[i]},{line[i + 1]},{line[i + 2]}) went through input.");
+            }
+            board.Moved -= Count;
+            Assert.IsTrue(_view.Board.IsWon, "w1_l005 won through input.");
+            yield return WaitForOutcome();
+        }
+
         private static void AssertSameStart(Board expected, Board actual)
         {
             Assert.AreEqual(expected.ShelfCount, actual.ShelfCount);
@@ -221,16 +240,57 @@ namespace Game.Tests.PlayMode
         }
 
         [UnityTest]
-        public IEnumerator Next_AfterTheLastLevel_LoopsToTheFirst()
+        public IEnumerator WinLastLevelByInput_ShowsMoreLevelsSoon_ThenReplayLoadsW1L001()
+        {
+            Wire(LoadWorld1(), 4);
+            yield return null;
+            yield return null;
+            Assert.AreEqual("w1_l005", _bootstrap.CurrentLevelName);
+            Assert.IsFalse(_bootstrap.HasNext, "w1_l005 is the last level in the sequence.");
+
+            yield return WinW1L005();
+            yield return null;
+            Assert.AreEqual(BoardOutcome.Won, _view.Outcome);
+            Assert.IsTrue(_panels.IsMoreLevelsVisible, "More levels coming soon shows after the last level.");
+            Assert.IsFalse(_panels.IsWinVisible, "The Win panel (with Next) is not shown on the last level.");
+            Assert.IsFalse(_panels.IsStuckVisible);
+            Assert.AreEqual("More levels coming soon", _panels.MoreLevelsTitleLabel.text.Replace('\n', ' '));
+
+            // One button, Replay, and no Next anywhere on screen.
+            Assert.AreEqual(1, _panels.MoreLevelsButtons.Length, "Only Replay on the card.");
+            Assert.AreEqual("Replay", _panels.MoreLevelsReplayButton.GetComponentInChildren<Text>().text);
+            foreach (var button in _panelsObject.GetComponentsInChildren<Button>(false))
+            {
+                Assert.AreNotEqual("Next", button.GetComponentInChildren<Text>().text, "No active Next button.");
+            }
+
+            // Board input is locked under the panel.
+            yield return Click(Tile(0, 0));
+            Assert.AreEqual(-1, _view.SelectedShelf, "No selection through the panel.");
+
+            yield return ClickButton(_panels.MoreLevelsReplayButton);
+            Assert.AreEqual(0, _bootstrap.CurrentIndex, "Replay goes to the first level.");
+            Assert.AreEqual("w1_l001", _bootstrap.CurrentLevelName);
+            Assert.IsFalse(_panels.IsMoreLevelsVisible, "Panel hides on Replay.");
+            Assert.IsFalse(_view.InputLocked, "Board input is live again.");
+            var expected = LevelLoader.Load(File.ReadAllText(World1[0]), "w1_l001").Board;
+            AssertSameStart(expected, _view.Board);
+            Assert.AreEqual(9, _view.VisibleFrontTileCount, "All nine tiles drawn.");
+
+            yield return Click(Tile(1, 1));
+            Assert.AreEqual(1, _view.SelectedShelf, "Input works after Replay.");
+        }
+
+        [UnityTest]
+        public IEnumerator Next_OnTheLastLevel_DoesNotLoop()
         {
             Wire(LoadWorld1(), 4);
             yield return null;
             yield return null;
             Assert.AreEqual("w1_l005", _bootstrap.CurrentLevelName);
 
-            _panels.Show(BoardOutcome.Won); // winning L5 by input is 18 moves; the button path is what is under test
-            yield return ClickButton(_panels.WinNextButton);
-            Assert.AreEqual("w1_l001", _bootstrap.CurrentLevelName, "Placeholder: after L5, Next loops to L1.");
+            Assert.IsFalse(_bootstrap.Next(), "No level after w1_l005.");
+            Assert.AreEqual("w1_l005", _bootstrap.CurrentLevelName, "Next never loops back to w1_l001.");
         }
 
         // ---- Stuck ----
@@ -285,16 +345,18 @@ namespace Game.Tests.PlayMode
             _panels.Layout(safe, density);
             yield return null;
 
-            foreach (var outcome in new[] { BoardOutcome.Won, BoardOutcome.Stuck })
+            foreach (var panel in new[] { ResultPanel.Win, ResultPanel.Stuck, ResultPanel.MoreLevelsSoon })
             {
-                _panels.Show(outcome);
+                _panels.Show(panel);
                 Canvas.ForceUpdateCanvases();
-                var card = outcome == BoardOutcome.Won ? _panels.WinCard : _panels.StuckCard;
-                AssertInside(safe, card, $"{outcome} card at {width}x{height}");
+                var card = panel == ResultPanel.Win ? _panels.WinCard
+                    : panel == ResultPanel.Stuck ? _panels.StuckCard
+                    : _panels.MoreLevelsCard;
+                AssertInside(safe, card, $"{panel} card at {width}x{height}");
 
-                var buttons = outcome == BoardOutcome.Won
-                    ? new[] { _panels.WinNextButton, _panels.WinRetryButton }
-                    : new[] { _panels.StuckRetryButton };
+                var buttons = panel == ResultPanel.Win ? new[] { _panels.WinNextButton, _panels.WinRetryButton }
+                    : panel == ResultPanel.Stuck ? new[] { _panels.StuckRetryButton }
+                    : new[] { _panels.MoreLevelsReplayButton };
                 foreach (var button in buttons)
                 {
                     var r = ScreenRect((RectTransform)button.transform);
