@@ -11,7 +11,8 @@ namespace Game.Levels
     /// Rules checked:
     /// <list type="bullet">
     /// <item><c>schema</c> is 1, <c>id</c> is set, and <c>shelves</c> is present and not empty.</item>
-    /// <item>Every shelf has a known <c>kind</c> and at least a front row, and every layer has exactly
+    /// <item>Every shelf is <c>normal</c> (locked and conveyor shelves are rejected as not supported yet) and has
+    /// at least a front row, and every layer has exactly
     /// <see cref="Shelf.SlotCount"/> slots.</item>
     /// <item>Every object id is in <see cref="ObjectCatalog"/>.</item>
     /// <item>Every object id appears a multiple of <see cref="GameRules.MatchCount"/> times across the level.</item>
@@ -22,8 +23,8 @@ namespace Game.Levels
     /// </list>
     ///
     /// "At start" means the board as <see cref="Board"/> builds it, i.e. after empty front rows are filled from behind.
-    /// Not checked yet, because the board doesn't build them: locked/conveyor behaviour (such shelves are built as
-    /// normal shelves for now), <c>wrapped</c> positions, <c>role</c>/<c>tutorial</c> values, and tray sets.
+    /// Not checked yet, because the board doesn't build them: <c>wrapped</c> positions, <c>role</c>/<c>tutorial</c>
+    /// values, and tray sets.
     /// </summary>
     public static class LevelValidator
     {
@@ -127,6 +128,12 @@ namespace Game.Levels
             {
                 errors.Add(new LevelError(LevelErrorCode.UnknownShelfKind, levelId,
                     $"unknown shelf kind \"{shelf.Kind}\"; expected normal, locked or conveyor", index, shelf.Id));
+            }
+            else if (shelf != null && !ShelfKinds.IsSupported(shelf.Kind))
+            {
+                string when = shelf.Kind == ShelfKinds.Locked ? "locked shelves arrive in Slice 2" : "conveyor shelves come after launch";
+                errors.Add(new LevelError(LevelErrorCode.UnsupportedShelfKind, levelId,
+                    $"shelf kind \"{shelf.Kind}\" is not supported yet ({when}); use \"normal\"", index, shelf.Id));
             }
 
             if (shelf?.Layers == null || shelf.Layers.Count == 0)

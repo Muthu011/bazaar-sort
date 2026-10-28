@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace Game.Levels
 {
     /// <summary>
-    /// The object ids a level may use, from the world lists in docs/game-design.md, in snake_case.
+    /// The master list of object ids a level may use (see "Object ids" in docs/game-design.md), in snake_case.
     /// Level validation rejects any id not listed here (case-sensitive). Add a world's ids when its levels are made.
     /// </summary>
     public static class ObjectCatalog

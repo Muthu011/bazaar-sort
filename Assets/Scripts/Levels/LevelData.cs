@@ -74,5 +74,14 @@ namespace Game.Levels
         {
             return kind == Normal || kind == Locked || kind == Conveyor;
         }
+
+        /// <summary>
+        /// True for kinds the board can build today. Only normal shelves for now: locked shelves arrive in Slice 2,
+        /// conveyor shelves after launch.
+        /// </summary>
+        public static bool IsSupported(string kind)
+        {
+            return kind == Normal;
+        }
     }
 }

@@ -337,12 +337,27 @@ namespace Game.Tests.EditMode
         }
 
         [Test]
-        public void Validate_LockedAndConveyorKinds_AreAccepted()
+        public void Validate_LockedShelf_IsNotSupportedYet()
         {
             var errors = ValidateShelves(
-                "{ \"id\": \"s1\", \"kind\": \"locked\", \"lockClears\": 2, \"layers\": [[\"tumbler\", \"tumbler\", null]] }, " +
-                "{ \"id\": \"s2\", \"kind\": \"conveyor\", \"layers\": [[\"tumbler\", null, null]] }");
-            CollectionAssert.IsEmpty(errors);
+                ValidShelves + ", { \"id\": \"s3\", \"kind\": \"locked\", \"lockClears\": 2, \"layers\": [[null, null, null]] }");
+            var error = errors.Single();
+            Assert.AreEqual(LevelErrorCode.UnsupportedShelfKind, error.Code);
+            Assert.AreEqual(
+                "t_level: shelf 2 (\"s3\"): shelf kind \"locked\" is not supported yet (locked shelves arrive in Slice 2); use \"normal\"",
+                error.Message);
+        }
+
+        [Test]
+        public void Validate_ConveyorShelf_IsNotSupportedYet()
+        {
+            var errors = ValidateShelves(
+                ValidShelves + ", { \"id\": \"s3\", \"kind\": \"conveyor\", \"layers\": [[null, null, null]] }");
+            var error = errors.Single();
+            Assert.AreEqual(LevelErrorCode.UnsupportedShelfKind, error.Code);
+            Assert.AreEqual(
+                "t_level: shelf 2 (\"s3\"): shelf kind \"conveyor\" is not supported yet (conveyor shelves come after launch); use \"normal\"",
+                error.Message);
         }
 
         [Test]

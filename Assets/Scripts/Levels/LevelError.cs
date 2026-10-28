@@ -19,6 +19,8 @@ namespace Game.Levels
         MissingLayers,
         /// <summary>A shelf's <c>kind</c> is not normal, locked or conveyor.</summary>
         UnknownShelfKind,
+        /// <summary>A shelf's <c>kind</c> is in the schema but not built yet (locked, conveyor).</summary>
+        UnsupportedShelfKind,
         /// <summary>A layer does not have exactly <see cref="Game.Core.Shelf.SlotCount"/> slots.</summary>
         WrongSlotCount,
         /// <summary>An object id appears a number of times that is not a multiple of <see cref="Game.Core.GameRules.MatchCount"/>.</summary>
