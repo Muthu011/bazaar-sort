@@ -25,8 +25,8 @@ namespace Game.Tests.EditMode
             // L3: 8 moves
             new[]
             {
-                new[] { 0, 0, 1 }, new[] { 2, 0, 0 }, new[] { 3, 0, 0 }, new[] { 0, 0, 2 },
-                new[] { 1, 2, 0 }, new[] { 0, 1, 1 }, new[] { 2, 1, 0 }, new[] { 3, 2, 2 },
+                new[] { 0, 0, 1 }, new[] { 2, 0, 3 }, new[] { 0, 1, 2 }, new[] { 0, 0, 3 },
+                new[] { 1, 2, 0 }, new[] { 0, 1, 1 }, new[] { 2, 1, 0 }, new[] { 3, 0, 2 },
             },
             // L4: 13 moves
             new[]
