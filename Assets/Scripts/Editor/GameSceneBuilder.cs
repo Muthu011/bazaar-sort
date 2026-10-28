@@ -2,10 +2,13 @@ using System.Collections.Generic;
 using System.IO;
 using Game.Core;
 using Game.Levels;
+using Game.UI;
 using Game.View;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using UnityEngine.EventSystems;
+using UnityEngine.InputSystem.UI;
 
 namespace Game.EditorTools
 {
@@ -18,17 +21,34 @@ namespace Game.EditorTools
         public const string ScenePath = "Assets/Scenes/Game.unity";
         public const string DefaultLevelPath = "Assets/Levels/World1/w1_l001.json";
 
+        /// <summary>World 1 in play order: Next walks this list and loops after the last.</summary>
+        public static readonly string[] World1LevelPaths =
+        {
+            "Assets/Levels/World1/w1_l001.json",
+            "Assets/Levels/World1/w1_l002.json",
+            "Assets/Levels/World1/w1_l003.json",
+            "Assets/Levels/World1/w1_l004.json",
+            "Assets/Levels/World1/w1_l005.json",
+        };
+
+        /// <summary>Pixels per dp used for screenshots: a 1080 px wide phone at 360 dp.</summary>
+        public const float ScreenshotDensity = 3f;
+
         /// <summary>Portrait phone sizes the board is checked on: 16:9 and 20:9.</summary>
         public static readonly Vector2Int[] ScreenshotSizes = { new Vector2Int(1080, 1920), new Vector2Int(1080, 2400) };
 
         [MenuItem("Bazaar Sort/Build Game Scene")]
         public static void BuildGameScene()
         {
-            var level = AssetDatabase.LoadAssetAtPath<TextAsset>(DefaultLevelPath);
-            if (level == null)
+            var levels = new TextAsset[World1LevelPaths.Length];
+            for (int i = 0; i < levels.Length; i++)
             {
-                Debug.LogError($"GameSceneBuilder: level not found at {DefaultLevelPath}.");
-                return;
+                levels[i] = AssetDatabase.LoadAssetAtPath<TextAsset>(World1LevelPaths[i]);
+                if (levels[i] == null)
+                {
+                    Debug.LogError($"GameSceneBuilder: level not found at {World1LevelPaths[i]}.");
+                    return;
+                }
             }
 
             var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
@@ -47,8 +67,15 @@ namespace Game.EditorTools
 
             var bootstrapObject = new GameObject("Level Bootstrap");
             var bootstrap = bootstrapObject.AddComponent<LevelBootstrap>();
-            bootstrap.Configure(level, view, camera);
+            bootstrap.Configure(levels, view, camera);
             EditorUtility.SetDirty(bootstrap);
+
+            var panelsObject = new GameObject("Result Panels");
+            var panels = panelsObject.AddComponent<ResultPanels>();
+            panels.Configure(view, bootstrap, camera);
+            EditorUtility.SetDirty(panels);
+
+            new GameObject("EventSystem", typeof(EventSystem), typeof(InputSystemUIInputModule));
 
             EditorSceneManager.SaveScene(scene, ScenePath);
             AddSceneToBuildSettingsFirst(ScenePath);
@@ -108,9 +135,86 @@ namespace Game.EditorTools
             return written;
         }
 
-        /// <summary>Renders <paramref name="board"/> at <paramref name="width"/>x<paramref name="height"/> into a PNG at <paramref name="path"/>.</summary>
-        public static string Capture(Board board, int width, int height, string path, System.Action<BoardView> beforeRender = null)
+        /// <summary>
+        /// Win panel at 1080x1920 and 1080x2400 and Stuck panel at 1080x1920, over the board in that state, into
+        /// <paramref name="outputDir"/>. The 2400 shot uses a safe area with a 110 px top cutout and 60 px gesture bar.
+        /// </summary>
+        public static List<string> CaptureResultPanelScreenshots(string outputDir)
         {
+            var written = new List<string>();
+            Directory.CreateDirectory(outputDir);
+
+            foreach (var size in ScreenshotSizes)
+            {
+                var won = LoadOrNull(DefaultLevelPath);
+                if (won == null) return written;
+                // w1_l001 winning line (docs: Assets/Levels/World1/pack-1.md).
+                won.TryMove(1, 1, 0);
+                won.TryMove(2, 2, 1);
+                won.TryMove(3, 0, 2);
+                var safe = SafeAreaFor(size);
+                string path = Path.Combine(outputDir, $"win_panel_{size.x}x{size.y}.png");
+                written.Add(Capture(won, size.x, size.y, path, view => view.CompleteAnimations(), BoardOutcome.Won, safe));
+            }
+
+            var stuck = StuckBoard();
+            stuck.TryMove(1, 0, 0);
+            var stuckSize = ScreenshotSizes[0];
+            written.Add(Capture(stuck, stuckSize.x, stuckSize.y, Path.Combine(outputDir, $"stuck_panel_{stuckSize.x}x{stuckSize.y}.png"),
+                view => view.CompleteAnimations(), BoardOutcome.Stuck, SafeAreaFor(stuckSize)));
+            return written;
+        }
+
+        /// <summary>
+        /// A frame part-way through the tumbler clear on w1_l001 (s2's tumbler onto s1), at the top of the pop, into
+        /// "mid_clear_1080x1920.png".
+        /// </summary>
+        public static string CaptureMidClearScreenshot(string outputDir, float seconds)
+        {
+            Directory.CreateDirectory(outputDir);
+            var board = LoadOrNull(DefaultLevelPath);
+            if (board == null) return null;
+            var size = ScreenshotSizes[0];
+            string path = Path.Combine(outputDir, $"mid_clear_{size.x}x{size.y}.png");
+            return Capture(board, size.x, size.y, path, view =>
+            {
+                board.TryMove(1, 1, 0);
+                view.AdvanceAnimations(seconds);
+            });
+        }
+
+        /// <summary>
+        /// Four shelves; moving s2's idli stand onto s1 fills s1 and reveals a full row on s2, leaving no free slot:
+        /// the board is stuck. Same shape as the Play Mode stuck test level.
+        /// </summary>
+        public static Board StuckBoard()
+        {
+            return new Board(
+                new Shelf(new[] { "tumbler", "tawa", null }),
+                new Shelf(new[] { "idli_stand", null, null }, new[] { "masala_dabba", "tawa", "tumbler" }),
+                new Shelf(new[] { "masala_dabba", "masala_dabba", "idli_stand" }),
+                new Shelf(new[] { "tumbler", "tawa", "idli_stand" }));
+        }
+
+        private static Rect SafeAreaFor(Vector2Int size)
+        {
+            // 20:9 phones have a camera cutout and a gesture bar; 16:9 ones here are full screen.
+            return size.y >= 2400 ? new Rect(0, 60, size.x, size.y - 60 - 110) : new Rect(0, 0, size.x, size.y);
+        }
+
+        private static Board LoadOrNull(string levelAssetPath)
+        {
+            var result = LevelLoader.Load(File.ReadAllText(levelAssetPath), Path.GetFileNameWithoutExtension(levelAssetPath));
+            if (result.Success) return result.Board;
+            foreach (var error in result.Errors) Debug.LogError(error.Message);
+            return null;
+        }
+
+        /// <summary>Renders <paramref name="board"/> at <paramref name="width"/>x<paramref name="height"/> into a PNG at <paramref name="path"/>.</summary>
+        public static string Capture(Board board, int width, int height, string path, System.Action<BoardView> beforeRender = null,
+            BoardOutcome panel = BoardOutcome.None, Rect? safeArea = null)
+        {
+            var safe = safeArea ?? new Rect(0, 0, width, height);
             var target = new RenderTexture(width, height, 24, RenderTextureFormat.ARGB32);
             var cameraObject = new GameObject("Screenshot Camera") { hideFlags = HideFlags.HideAndDontSave };
             var viewObject = new GameObject("Screenshot Board View") { hideFlags = HideFlags.HideAndDontSave };
@@ -120,8 +224,16 @@ namespace Game.EditorTools
                 var camera = cameraObject.AddComponent<Camera>();
                 camera.targetTexture = target;
                 var view = viewObject.AddComponent<BoardView>();
-                view.Bind(board, camera, new Rect(0, 0, width, height), BoardLayoutSettings.Default);
+                view.Bind(board, camera, safe, BoardLayoutSettings.Default);
                 beforeRender?.Invoke(view);
+                if (panel != BoardOutcome.None)
+                {
+                    var panels = viewObject.AddComponent<ResultPanels>();
+                    panels.Build(camera, false);
+                    panels.Layout(safe, ScreenshotDensity);
+                    panels.Show(panel);
+                    Canvas.ForceUpdateCanvases();
+                }
                 camera.Render();
 
                 RenderTexture.active = target;
