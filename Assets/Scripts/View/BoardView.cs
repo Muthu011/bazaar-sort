@@ -1,5 +1,6 @@
 using System;
 using Game.Core;
+using Game.Services;
 using UnityEngine;
 using Object = UnityEngine.Object;
 
@@ -31,6 +32,12 @@ namespace Game.View
     /// the clears left (<see cref="Shelf.LockClearsLeft"/>). The number is re-read from the board on every Cleared and
     /// bumps (<see cref="LockMotion"/>) when it goes down; on ShelfUnlocked the padlock pops off (grows and fades) and
     /// the scrim fades with it. The view only shows the lock; the board refuses the moves.
+    ///
+    /// Game feel (issue #21, <see cref="FeelMotion"/>): a picked tile squashes and settles over a soft shadow; every
+    /// move flies the item to its new slot on an arc (a Fly step queued on the target shelf, so a clear it causes pops
+    /// after it lands); clears squash as they pop and raise <see cref="ClearShown"/> (burst, coin) at the top of the
+    /// pop; reveals bounce into place. A refused move buzzes and a clear ticks through <see cref="IHaptics"/>, which
+    /// respects the player's setting. All still on the one allocation-free clock, <see cref="AdvanceAnimations"/>.
     /// </summary>
     public sealed class BoardView : MonoBehaviour, IBoardInputView
     {
@@ -40,8 +47,9 @@ namespace Game.View
         private const int HiddenTileOrder = 1;
         private const int HiddenLabelOrder = 2;
         private const int HighlightOrder = 3;
-        private const int FrontTileOrder = 4;
-        private const int FrontLabelOrder = 5;
+        private const int ShadowOrder = 4;
+        private const int FrontTileOrder = 5;
+        private const int FrontLabelOrder = 6;
         private const int DragTileOrder = 20;
         private const int DragLabelOrder = 21;
         private const int LockScrimOrder = 10;
@@ -90,6 +98,16 @@ namespace Game.View
         /// <summary>Dragged tile scale.</summary>
         internal const float DragScale = 1.1f;
 
+        /// <summary>Soft shadow under a lifted, dragged or flying tile: width in tiles, and how dark.</summary>
+        internal const float ShadowWidthTiles = 0.95f;
+        private static readonly Color32 ShadowColor = new Color32(0x00, 0x00, 0x00, 0x50);
+
+        /// <summary>Shadow centre below a resting tile's centre, in tiles (peeks out under the lifted tile).</summary>
+        private const float ShadowDropTiles = 0.42f;
+
+        /// <summary>Shadow centre below a dragged tile's centre, in tiles (it is "higher", so the shadow falls further).</summary>
+        private const float DragShadowDropTiles = 0.6f;
+
         private Board _board;
         private Camera _camera;
         private BoardLayoutSettings _settings;
@@ -98,6 +116,11 @@ namespace Game.View
         private TextMesh _status;
         private Font _font;
         private SpriteRenderer _highlight;
+        private SpriteRenderer _shadow;
+        private IHaptics _haptics;
+
+        // Pick-up squash of the selected or dragged tile (-1 when idle).
+        private float _pickElapsed = -1f;
 
         private int _selectedShelf = -1;
         private int _selectedSlot = -1;
@@ -123,6 +146,19 @@ namespace Game.View
         /// show the Win or Stuck panel.
         /// </summary>
         public event Action<BoardOutcome> OutcomeReady;
+
+        /// <summary>
+        /// Raised once per Core clear, at the top of its pop (or at once when the pop is skipped): the moment for the
+        /// particle burst, the coin and the clear haptic. See <see cref="ClearBurst"/>.
+        /// </summary>
+        public event Action<ClearBurst> ClearShown;
+
+        /// <summary>Haptics for wrong moves and clears; <see cref="GameServices.Haptics"/> unless set (tests).</summary>
+        public IHaptics Haptics
+        {
+            get => _haptics ?? GameServices.Haptics;
+            set => _haptics = value;
+        }
 
         /// <summary>The board being drawn, or null when unbound.</summary>
         public Board Board => _board;
@@ -162,6 +198,7 @@ namespace Game.View
             _highlight = CreateSprite(transform, "Selection Highlight", HighlightOrder);
             _highlight.color = HighlightColor;
             _highlight.gameObject.SetActive(false);
+            _shadow = CreateShadow(transform, "Pick Shadow");
             _status = CreateLabel(transform, "Status", _font, StatusOrder);
             _status.text = string.Empty;
             _status.color = TextColor(StatusColor);
@@ -202,6 +239,8 @@ namespace Game.View
             _shelves = null;
             _status = null;
             _highlight = null;
+            _shadow = null;
+            _pickElapsed = -1f;
             _layout = null;
             _selectedShelf = _selectedSlot = -1;
             _dragShelf = _dragSlot = -1;
@@ -241,6 +280,7 @@ namespace Game.View
                 var shelfRect = _layout.GetShelfRect(i);
                 Place(shelf.Background, shelfRect);
                 Place(shelf.Scrim, shelfRect);
+                SizeShadow(shelf.FlightShadow);
                 // Padlock on the shelf's top-right corner, straddling the top edge, clear of the front row.
                 SetPixelPosition(shelf.Lock, new Vector2(shelfRect.xMax - 0.35f * padlockWidth, shelfRect.yMax - 0.1f * padlockWidth));
                 float w = padlockWidth / PixelsPerUnit;
@@ -257,8 +297,15 @@ namespace Game.View
             // Every tile is back home now: drop any running motion, then re-apply the selection lift and the drag.
             _motionShelf = _motionSlot = -1;
             _highlight.size = Vector2.one * (_layout.TileSize * HighlightScale / PixelsPerUnit);
+            SizeShadow(_shadow);
+            _pickElapsed = -1f;
             ApplySelectionVisual();
-            if (_dragShelf >= 0) SetDragOrder(_shelves[_dragShelf].Front[_dragSlot], true);
+            if (_dragShelf >= 0)
+            {
+                var dragged = _shelves[_dragShelf].Front[_dragSlot];
+                SetDragOrder(dragged, true);
+                PlaceDragShadow(dragged.Renderer.transform.position * PixelsPerUnit);
+            }
 
             // Status line sits in the HUD reserve above the playfield.
             var playfield = _layout.Playfield;
@@ -279,6 +326,7 @@ namespace Game.View
             _selectedShelf = shelf;
             _selectedSlot = slot;
             ApplySelectionVisual();
+            StartPickUp();
         }
 
         /// <summary>Removes the highlight and puts the selected tile back down.</summary>
@@ -288,6 +336,7 @@ namespace Game.View
             if (_selectedShelf >= 0) ResetTile(_selectedShelf, _selectedSlot);
             _selectedShelf = _selectedSlot = -1;
             _highlight.gameObject.SetActive(false);
+            if (_dragShelf < 0) HidePickUp();
         }
 
         /// <summary>Lifts the tile above everything and starts following <paramref name="screenPosition"/>.</summary>
@@ -301,6 +350,7 @@ namespace Game.View
             _dragSlot = slot;
             SetDragOrder(_shelves[shelf].Front[slot], true);
             DragTo(screenPosition);
+            StartPickUp();
         }
 
         /// <summary>Moves the dragged tile's centre to <paramref name="screenPosition"/>.</summary>
@@ -308,6 +358,7 @@ namespace Game.View
         {
             if (_board == null || _dragShelf < 0) return;
             SetPixelPosition(_shelves[_dragShelf].Front[_dragSlot].Renderer.transform, screenPosition);
+            PlaceDragShadow(screenPosition);
         }
 
         /// <summary>Ends the drag: reset at once when the move landed, otherwise glide home (and shake when refused).</summary>
@@ -318,13 +369,16 @@ namespace Game.View
             Vector2 from = tile.Renderer.transform.position * PixelsPerUnit;
             _dragShelf = _dragSlot = -1;
             SetDragOrder(tile, false);
+            HidePickUp();
 
             if (feedback == DropFeedback.Landed)
             {
                 ResetTile(shelf, slot);
                 return;
             }
-            StartMotion(shelf, slot, from, true, feedback == DropFeedback.SnapBackWithShake);
+            bool shake = feedback == DropFeedback.SnapBackWithShake;
+            StartMotion(shelf, slot, from, true, shake);
+            if (shake) Haptics.Play(HapticPulse.WrongMove);
         }
 
         /// <summary>Shakes a tile in place: the "not allowed" cue for a refused tap move.</summary>
@@ -334,6 +388,7 @@ namespace Game.View
             FinishMotion();
             CompleteShelf(shelf);
             StartMotion(shelf, slot, HomePixel(shelf, slot), false, true);
+            Haptics.Play(HapticPulse.WrongMove);
         }
 
         private void Update()
@@ -381,10 +436,64 @@ namespace Game.View
         private void ApplySelectionVisual()
         {
             if (_selectedShelf < 0) return;
-            var lifted = HomePixel(_selectedShelf, _selectedSlot) + new Vector2(0f, SelectedLiftTiles * _layout.TileSize);
+            var home = HomePixel(_selectedShelf, _selectedSlot);
+            var lifted = home + new Vector2(0f, SelectedLiftTiles * _layout.TileSize);
             SetPixelPosition(_shelves[_selectedShelf].Front[_selectedSlot].Renderer.transform, lifted);
             SetPixelPosition(_highlight.transform, lifted);
             _highlight.gameObject.SetActive(true);
+            SetPixelPosition(_shadow.transform, home - new Vector2(0f, ShadowDropTiles * _layout.TileSize));
+            _shadow.gameObject.SetActive(true);
+        }
+
+        // ---- Pick-up squash and shadow (issue #21) ----
+
+        private void StartPickUp()
+        {
+            _pickElapsed = 0f;
+            ApplyPickUp();
+        }
+
+        private void HidePickUp()
+        {
+            _pickElapsed = -1f;
+            if (_shadow != null) _shadow.gameObject.SetActive(false);
+        }
+
+        private void PlaceDragShadow(Vector2 tilePixel)
+        {
+            SetPixelPosition(_shadow.transform, tilePixel - new Vector2(0f, DragShadowDropTiles * _layout.TileSize));
+            _shadow.gameObject.SetActive(true);
+        }
+
+        private void AdvancePickUp(float seconds)
+        {
+            if (_pickElapsed < 0f) return;
+            _pickElapsed += seconds;
+            ApplyPickUp();
+            if (_pickElapsed >= FeelMotion.PickUpSeconds) _pickElapsed = -1f;
+        }
+
+        /// <summary>Scales the selected or dragged tile by the pick-up squash on top of its resting or drag scale.</summary>
+        private void ApplyPickUp()
+        {
+            int shelf = _dragShelf >= 0 ? _dragShelf : _selectedShelf;
+            int slot = _dragShelf >= 0 ? _dragSlot : _selectedSlot;
+            if (shelf < 0)
+            {
+                _pickElapsed = -1f;
+                return;
+            }
+            var tile = _shelves[shelf].Front[slot];
+            if (tile.Animating) return;
+            float baseScale = _dragShelf >= 0 ? DragScale : 1f;
+            var s = FeelMotion.PickUpScale(_pickElapsed);
+            tile.Renderer.transform.localScale = new Vector3(baseScale * s.x, baseScale * s.y, 1f);
+        }
+
+        private void SizeShadow(SpriteRenderer shadow)
+        {
+            float w = _layout.TileSize * ShadowWidthTiles / PixelsPerUnit;
+            shadow.transform.localScale = new Vector3(w, w, 1f);
         }
 
         /// <summary>Puts a front tile back at its slot, normal size and draw order.</summary>
@@ -411,15 +520,27 @@ namespace Game.View
 
         private void OnMoved(MoveInfo info)
         {
+            // Fly from wherever the player sees the item: under the finger, lifted, or at rest in its slot.
+            Vector2 from = _shelves[info.FromShelf].Front[info.FromSlot].Renderer.transform.position * PixelsPerUnit;
             CompleteShelf(info.FromShelf);
             CompleteShelf(info.ToShelf);
             RefreshShelf(info.FromShelf);
             RefreshShelf(info.ToShelf);
+
+            Vector2 to = HomePixel(info.ToShelf, info.ToSlot);
+            var step = new AnimStep
+            {
+                Kind = StepKind.Fly,
+                Slot = info.ToSlot,
+                From = from,
+                Height = FeelMotion.ArcHeight(Vector2.Distance(from, to), _layout.TileSize),
+            };
+            Enqueue(info.ToShelf, step);
         }
 
         private void OnCleared(ClearInfo info)
         {
-            var step = new AnimStep { IsReveal = false, Item = info.ItemId };
+            var step = new AnimStep { Kind = StepKind.Clear, Item = info.ItemId };
             Enqueue(info.ShelfIndex, step);
             RefreshLockCounts();
         }
@@ -428,7 +549,7 @@ namespace Game.View
         {
             var shelf = _board.GetShelf(info.ShelfIndex);
             bool hasHidden = shelf.HiddenLayerCount > 0;
-            var step = new AnimStep { IsReveal = true };
+            var step = new AnimStep { Kind = StepKind.Reveal };
             for (int slot = 0; slot < Shelf.SlotCount; slot++)
             {
                 step.SetFront(slot, shelf.GetFrontItem(slot));
@@ -460,6 +581,7 @@ namespace Game.View
         {
             if (_board == null) return;
             AdvanceLocks(seconds);
+            AdvancePickUp(seconds);
 
             if (_animatingShelves > 0)
             {
@@ -614,8 +736,15 @@ namespace Game.View
             return texts;
         }
 
-        private static float StepDuration(in AnimStep step) =>
-            step.IsReveal ? ClearRevealMotion.RevealSeconds : ClearRevealMotion.ClearSeconds;
+        private static float StepDuration(in AnimStep step)
+        {
+            switch (step.Kind)
+            {
+                case StepKind.Reveal: return ClearRevealMotion.RevealSeconds;
+                case StepKind.Fly: return FeelMotion.ArcSeconds;
+                default: return ClearRevealMotion.ClearSeconds;
+            }
+        }
 
         private void Enqueue(int shelf, AnimStep step)
         {
@@ -624,6 +753,7 @@ namespace Game.View
             {
                 // Pathological chain: drop the animation and show the end state.
                 CompleteShelf(shelf);
+                if (step.Kind == StepKind.Clear) RaiseClearShown(shelf, step.Item, false);
                 return;
             }
 
@@ -643,7 +773,17 @@ namespace Game.View
             visual.StepElapsed = 0f;
             ref var step = ref visual.Steps[visual.StepHead];
 
-            if (step.IsReveal)
+            if (step.Kind == StepKind.Fly)
+            {
+                var tile = visual.Front[step.Slot];
+                tile.Animating = tile.IsVisible;
+                if (tile.Animating)
+                {
+                    tile.SetOrder(DragTileOrder, DragLabelOrder);
+                    visual.FlightShadow.gameObject.SetActive(true);
+                }
+            }
+            else if (step.IsReveal)
             {
                 for (int slot = 0; slot < Shelf.SlotCount; slot++)
                 {
@@ -670,6 +810,26 @@ namespace Game.View
         {
             var visual = _shelves[shelf];
             ref var step = ref visual.Steps[visual.StepHead];
+
+            if (step.Kind == StepKind.Fly)
+            {
+                var flyer = visual.Front[step.Slot];
+                if (!flyer.Animating) return;
+                var to = HomePixel(shelf, step.Slot);
+                SetPixelPosition(flyer.Renderer.transform, FeelMotion.ArcPosition(step.From, to, step.Height, elapsed));
+                float fs = FeelMotion.ArcScale(elapsed);
+                flyer.Renderer.transform.localScale = new Vector3(fs, fs, 1f);
+                SetPixelPosition(visual.FlightShadow.transform,
+                    FeelMotion.ArcGround(step.From, to, elapsed) - new Vector2(0f, ShadowDropTiles * _layout.TileSize));
+                return;
+            }
+
+            if (step.Kind == StepKind.Clear && !step.Burst && elapsed >= ClearRevealMotion.ClearPopSeconds)
+            {
+                step.Burst = true;
+                RaiseClearShown(shelf, step.Item, true);
+            }
+
             for (int slot = 0; slot < Shelf.SlotCount; slot++)
             {
                 var tile = visual.Front[slot];
@@ -689,7 +849,8 @@ namespace Game.View
                 else
                 {
                     float s = ClearRevealMotion.ClearScale(elapsed);
-                    t.localScale = new Vector3(s, s, 1f);
+                    float a = ClearRevealMotion.ClearSquashAspect(elapsed);
+                    t.localScale = new Vector3(s * (1f + a), s * (1f - a), 1f);
                     tile.SetTint(1f, ClearRevealMotion.ClearAlpha(elapsed));
                 }
             }
@@ -698,17 +859,25 @@ namespace Game.View
         private void EndCurrentStep(int shelf)
         {
             var visual = _shelves[shelf];
-            bool wasReveal = visual.Steps[visual.StepHead].IsReveal;
+            ref var ending = ref visual.Steps[visual.StepHead];
+            var kind = ending.Kind;
+            if (kind == StepKind.Clear && !ending.Burst)
+            {
+                // A long frame jumped past the top of the pop: still one burst per clear.
+                ending.Burst = true;
+                RaiseClearShown(shelf, ending.Item, true);
+            }
+            visual.FlightShadow.gameObject.SetActive(false);
             for (int slot = 0; slot < Shelf.SlotCount; slot++)
             {
                 var tile = visual.Front[slot];
                 if (!tile.Animating) continue;
                 tile.Animating = false;
-                if (wasReveal)
+                if (kind == StepKind.Reveal)
                 {
                     tile.SetTint(1f, 1f);
                 }
-                else
+                else if (kind == StepKind.Clear)
                 {
                     tile.Show(null, 1f);
                 }
@@ -736,6 +905,13 @@ namespace Game.View
             var visual = _shelves[shelf];
             if (visual.StepCount == 0) return;
 
+            // Every clear still owes its burst (counter, haptic): skipped ones are raised as not animated.
+            for (int i = 0; i < visual.StepCount; i++)
+            {
+                ref var queued = ref visual.Steps[(visual.StepHead + i) % MaxQueuedSteps];
+                if (queued.Kind == StepKind.Clear && !queued.Burst) RaiseClearShown(shelf, queued.Item, false);
+            }
+            visual.FlightShadow.gameObject.SetActive(false);
             for (int i = 0; i < MaxQueuedSteps; i++) visual.Steps[i] = default;
             visual.StepHead = 0;
             visual.StepCount = 0;
@@ -746,6 +922,14 @@ namespace Game.View
                 ResetTile(shelf, slot);
             }
             RefreshShelf(shelf);
+        }
+
+        private void RaiseClearShown(int shelf, string item, bool animated)
+        {
+            // The triple fills the front row, so its centre is the middle slot's centre.
+            var centre = _layout.GetFrontSlotRect(shelf, Shelf.SlotCount / 2).center;
+            Haptics.Play(HapticPulse.Light);
+            ClearShown?.Invoke(new ClearBurst(shelf, item, centre, animated));
         }
 
         /// <summary>Redraws one shelf from the board's current state.</summary>
@@ -781,6 +965,18 @@ namespace Game.View
             renderer.sprite = PlaceholderSprites.RoundedSquare;
             renderer.drawMode = SpriteDrawMode.Sliced;
             renderer.sortingOrder = order;
+            return renderer;
+        }
+
+        private static SpriteRenderer CreateShadow(Transform parent, string name)
+        {
+            var go = new GameObject(name);
+            go.transform.SetParent(parent, false);
+            var renderer = go.AddComponent<SpriteRenderer>();
+            renderer.sprite = PlaceholderSprites.SoftShadow;
+            renderer.color = ShadowColor;
+            renderer.sortingOrder = ShadowOrder;
+            go.SetActive(false);
             return renderer;
         }
 
@@ -884,6 +1080,20 @@ namespace Game.View
         internal bool IsShelfRevealing(int shelf) =>
             _shelves[shelf].StepCount > 0 && _shelves[shelf].Steps[_shelves[shelf].StepHead].IsReveal;
 
+        /// <summary>True when the step playing on <paramref name="shelf"/> is a move flight landing on it.</summary>
+        internal bool IsShelfFlying(int shelf) =>
+            _shelves[shelf].StepCount > 0 && _shelves[shelf].Steps[_shelves[shelf].StepHead].Kind == StepKind.Fly;
+
+        /// <summary>Scale (x, y) of a front tile right now.</summary>
+        internal Vector2 GetFrontTileScale2(int shelf, int slot) => _shelves[shelf].Front[slot].Renderer.transform.localScale;
+
+        internal bool IsPickShadowVisible => _shadow != null && _shadow.gameObject.activeSelf;
+        internal Vector2 PickShadowPixelPosition => _shadow.transform.position * PixelsPerUnit;
+        internal bool IsFlightShadowVisible(int shelf) => _shelves[shelf].FlightShadow.gameObject.activeSelf;
+
+        /// <summary>True while the selected or dragged tile is still squashing after pick-up.</summary>
+        internal bool IsPickingUp => _pickElapsed >= 0f;
+
         /// <summary>True while the padlock (and scrim) on <paramref name="shelf"/> is drawn, popping included.</summary>
         internal bool IsPadlockVisible(int shelf) => _shelves[shelf].Lock.gameObject.activeSelf;
 
@@ -905,13 +1115,30 @@ namespace Game.View
         /// <summary>Where a hidden-strip tile rests, in pixels.</summary>
         internal Vector2 GetHiddenTileHome(int shelf, int slot) => _layout.GetHiddenSlotRect(shelf, slot).center;
 
-        /// <summary>One queued clear or reveal. Strings are references to the board's ids: copying allocates nothing.</summary>
+        private enum StepKind
+        {
+            Clear = 0,
+            Reveal,
+            Fly,
+        }
+
+        /// <summary>One queued clear, reveal or flight. Strings are references to the board's ids: copying allocates nothing.</summary>
         private struct AnimStep
         {
-            public bool IsReveal;
+            public StepKind Kind;
+
+            public bool IsReveal => Kind == StepKind.Reveal;
 
             /// <summary>Cleared object id (clear steps).</summary>
             public string Item;
+
+            /// <summary>Clear steps: the burst has been raised.</summary>
+            public bool Burst;
+
+            // Fly steps: the landing slot, the start position in pixels and the arc height.
+            public int Slot;
+            public Vector2 From;
+            public float Height;
 
             // Front row after the reveal and the hidden row behind it (reveal steps). Shelf.SlotCount is 3.
             private string _front0, _front1, _front2;
@@ -939,6 +1166,7 @@ namespace Game.View
         private sealed class ShelfVisual
         {
             public readonly SpriteRenderer Background;
+            public readonly SpriteRenderer FlightShadow;
             public readonly Tile[] Front = new Tile[Shelf.SlotCount];
             public readonly Tile[] Hidden = new Tile[Shelf.SlotCount];
             public readonly AnimStep[] Steps = new AnimStep[MaxQueuedSteps];
@@ -961,6 +1189,7 @@ namespace Game.View
                 root.SetParent(parent, false);
                 Background = CreateSprite(root, "Background", ShelfOrder);
                 Background.color = ShelfColor;
+                FlightShadow = CreateShadow(root, "Flight Shadow");
                 for (int slot = 0; slot < Shelf.SlotCount; slot++)
                 {
                     Front[slot] = new Tile(root, "Front " + slot, font, FrontTileOrder, FrontLabelOrder);

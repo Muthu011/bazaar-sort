@@ -31,6 +31,25 @@ namespace Game.View
 
         private static Sprite _roundedSquare;
         private static Sprite _padlock;
+        private static Sprite _shadow;
+        private static Sprite _dot;
+        private static Sprite _star;
+        private static Sprite _coin;
+
+        /// <summary>
+        /// A soft white ellipse, twice as wide as tall, one world unit wide: the pick-up and flight shadow (tint it dark
+        /// and see-through).
+        /// </summary>
+        public static Sprite SoftShadow => _shadow != null ? _shadow : (_shadow = CreateSoftShadow());
+
+        /// <summary>A soft-edged white disc, one world unit across: particle sparks and confetti.</summary>
+        public static Sprite Dot => _dot != null ? _dot : (_dot = CreateDot());
+
+        /// <summary>A white five-point star, one world unit across: the Win panel stars.</summary>
+        public static Sprite Star => _star != null ? _star : (_star = CreateStar());
+
+        /// <summary>A gold coin (disc with a darker rim and a lighter face), one world unit across: the clear coin.</summary>
+        public static Sprite Coin => _coin != null ? _coin : (_coin = CreateCoin());
 
         /// <summary>One world unit across at its natural size; 9-slice borders are the corner radius.</summary>
         public static Sprite RoundedSquare
@@ -101,6 +120,120 @@ namespace Game.View
             var sprite = Sprite.Create(texture, new Rect(0, 0, PadlockWidth, PadlockHeight), new Vector2(0.5f, 0.5f),
                 PadlockWidth, 0, SpriteMeshType.FullRect);
             sprite.name = "PlaceholderPadlock";
+            sprite.hideFlags = HideFlags.DontSave;
+            return sprite;
+        }
+
+        private const int EffectSize = 64;
+
+        private static Sprite CreateSoftShadow()
+        {
+            const int w = 64, h = 32;
+            return Build("PlaceholderSoftShadow", w, h, (x, y) =>
+            {
+                float dx = (x - w * 0.5f) / (w * 0.5f);
+                float dy = (y - h * 0.5f) / (h * 0.5f);
+                float d = Mathf.Sqrt(dx * dx + dy * dy);
+                return Mathf.Clamp01(1f - d) * Mathf.Clamp01(1f - d) * 1.6f;
+            });
+        }
+
+        private static Sprite CreateDot()
+        {
+            const float r = EffectSize * 0.5f;
+            return Build("PlaceholderDot", EffectSize, EffectSize, (x, y) =>
+            {
+                float d = Mathf.Sqrt((x - r) * (x - r) + (y - r) * (y - r));
+                return Mathf.Clamp01((r - d) / 6f);
+            });
+        }
+
+        private static Sprite CreateStar()
+        {
+            const float c = EffectSize * 0.5f;
+            const float outer = EffectSize * 0.48f;
+            const float inner = outer * 0.42f;
+            const float sector = Mathf.PI / 5f; // 36 degrees: from a point to the next notch
+            return Build("PlaceholderStar", EffectSize, EffectSize, (x, y) =>
+            {
+                // The star is star-shaped around its centre, so a pixel is inside when it lies on the centre's side
+                // of the straight edge (point to notch) of its angular sector. Signed distance gives a soft edge.
+                float dx = x - c;
+                float dy = y - c;
+                float angle = Mathf.Repeat(Mathf.Atan2(dx, dy), 2f * Mathf.PI); // 0 = straight up, clockwise
+                int k = Mathf.FloorToInt(angle / sector);
+                float a0 = k * sector;
+                float a1 = a0 + sector;
+                float r0 = k % 2 == 0 ? outer : inner;
+                float r1 = k % 2 == 0 ? inner : outer;
+                var p0 = new Vector2(Mathf.Sin(a0) * r0, Mathf.Cos(a0) * r0);
+                var p1 = new Vector2(Mathf.Sin(a1) * r1, Mathf.Cos(a1) * r1);
+                var edge = p1 - p0;
+                var normal = new Vector2(edge.y, -edge.x).normalized; // points away from the centre
+                if (Vector2.Dot(normal, -p0) > 0f) normal = -normal;
+                float distance = Vector2.Dot(new Vector2(dx, dy) - p0, normal); // > 0 outside
+                return Mathf.Clamp01(0.5f - distance);
+            });
+        }
+
+        private static Sprite CreateCoin()
+        {
+            const float r = EffectSize * 0.5f - 1f;
+            var rim = new Color32(0xC7, 0x8A, 0x00, 0xFF);
+            var face = new Color32(0xFF, 0xC8, 0x2E, 0xFF);
+            var shine = new Color32(0xFF, 0xE6, 0x8A, 0xFF);
+            var texture = NewTexture("PlaceholderCoin", EffectSize, EffectSize);
+            var pixels = new Color32[EffectSize * EffectSize];
+            for (int y = 0; y < EffectSize; y++)
+            {
+                for (int x = 0; x < EffectSize; x++)
+                {
+                    float px = x + 0.5f - EffectSize * 0.5f;
+                    float py = y + 0.5f - EffectSize * 0.5f;
+                    float d = Mathf.Sqrt(px * px + py * py);
+                    Color32 c = d < r * 0.72f ? face : rim;
+                    if (d < r * 0.72f && d > r * 0.45f && px < 0f && py > 0f) c = shine;
+                    c.a = (byte)(Mathf.Clamp01(r - d + 0.5f) * 255f);
+                    pixels[y * EffectSize + x] = c;
+                }
+            }
+            return Finish(texture, pixels, EffectSize, EffectSize);
+        }
+
+        private static Sprite Build(string name, int width, int height, System.Func<float, float, float> alpha)
+        {
+            var texture = NewTexture(name, width, height);
+            var pixels = new Color32[width * height];
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    float a = Mathf.Clamp01(alpha(x + 0.5f, y + 0.5f));
+                    pixels[y * width + x] = new Color32(255, 255, 255, (byte)(a * 255f));
+                }
+            }
+            return Finish(texture, pixels, width, height);
+        }
+
+        private static Texture2D NewTexture(string name, int width, int height)
+        {
+            return new Texture2D(width, height, TextureFormat.RGBA32, false)
+            {
+                name = name,
+                wrapMode = TextureWrapMode.Clamp,
+                filterMode = FilterMode.Bilinear,
+                hideFlags = HideFlags.DontSave,
+            };
+        }
+
+        /// <summary>Uploads and makes a sprite one world unit wide, pivot centred.</summary>
+        private static Sprite Finish(Texture2D texture, Color32[] pixels, int width, int height)
+        {
+            texture.SetPixels32(pixels);
+            texture.Apply(false, true);
+            var sprite = Sprite.Create(texture, new Rect(0, 0, width, height), new Vector2(0.5f, 0.5f), width, 0,
+                SpriteMeshType.FullRect);
+            sprite.name = texture.name;
             sprite.hideFlags = HideFlags.DontSave;
             return sprite;
         }
