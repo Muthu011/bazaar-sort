@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "id": "w1_l002",
+  "world": 1,
+  "index": 2,
+  "role": "easy",
+  "tutorial": "layers",
+  "moveLimit": null,
+  "timeLimitSec": null,
+  "shelves": [
+    { "id": "s1", "kind": "normal", "lockClears": 0, "layers": [["tumbler", "tumbler", null], ["masala_dabba", "idli_stand", "masala_dabba"]] },
+    { "id": "s2", "kind": "normal", "lockClears": 0, "layers": [["idli_stand", "tumbler", "idli_stand"]] },
+    { "id": "s3", "kind": "normal", "lockClears": 0, "layers": [["masala_dabba", null, null]] },
+    { "id": "s4", "kind": "normal", "lockClears": 0, "layers": [[null, null, null]] }
+  ],
+  "trays": [],
+  "wrapped": []
+}
