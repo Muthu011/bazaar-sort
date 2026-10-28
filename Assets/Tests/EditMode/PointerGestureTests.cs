@@ -176,5 +176,46 @@ namespace Game.Tests.EditMode
             Tap(new Vector2(100f, 100f));
             Assert.IsEmpty(_view.Calls);
         }
+
+        // ---- Locked shelves (issue #19) ----
+
+        private void UseLockedBoard()
+        {
+            // Shelf 1 is locked: B _ _.
+            _board = new Board(
+                new Shelf(new[] { "tumbler", "tumbler", null }),
+                Shelf.Locked(1, new[] { "idli_stand", null, null }),
+                new Shelf(new[] { "tumbler", "idli_stand", "idli_stand" }),
+                new Shelf(new[] { "masala_dabba", null, null }));
+            _gesture = new PointerGesture(new MoveInput(_board), _view);
+        }
+
+        [Test]
+        public void Tap_OnLockedItem_ShakesItWithoutSelecting()
+        {
+            UseLockedBoard();
+            Tap(Tile(1, 0));
+            CollectionAssert.AreEqual(new[] { "Clear", "Shake 1:0" }, _view.Calls);
+            Assert.AreEqual(MoveResult.SourceLocked, _gesture.LastOutcome.Result);
+            Assert.IsFalse(_gesture.Input.HasSelection);
+        }
+
+        [Test]
+        public void Drag_FromLockedItem_DoesNotLiftIt_AndShakesOnRelease()
+        {
+            UseLockedBoard();
+            Drag(Tile(1, 0), Tile(3, 1));
+            CollectionAssert.AreEqual(new[] { "Clear", "Shake 1:0" }, _view.Calls);
+            Assert.AreEqual("idli_stand", _board.GetShelf(1).GetFrontItem(0));
+        }
+
+        [Test]
+        public void Drag_OntoLockedShelf_SnapsBackWithShake()
+        {
+            UseLockedBoard();
+            Drag(Tile(2, 1), Tile(1, 2));
+            Assert.AreEqual("EndDrag 2:1 SnapBackWithShake", _view.Calls[_view.Calls.Count - 1]);
+            Assert.AreEqual(MoveResult.TargetLocked, _gesture.LastOutcome.Result);
+        }
     }
 }

@@ -280,5 +280,72 @@ namespace Game.Tests.EditMode
         {
             Assert.Throws<System.ArgumentNullException>(() => new MoveInput(null));
         }
+    
+
+        // ---- Locked shelves (issue #19): Core decides, input only reports ----
+
+        // Shelf 0: A A _   Shelf 1 (locked, 1 clear): B _ _   Shelf 2: A B B
+        private static Board LockedBoard() => new Board(
+            new Shelf(new[] { A, A, null }),
+            Shelf.Locked(1, new[] { B, null, null }),
+            new Shelf(new[] { A, B, B }));
+
+        [Test]
+        public void TapItemOnLockedShelf_IsRejectedWithoutSelecting()
+        {
+            var input = new MoveInput(LockedBoard());
+            var outcome = input.Tap(At(1, 0));
+            Assert.AreEqual(InputOutcomeKind.Rejected, outcome.Kind);
+            Assert.AreEqual(MoveResult.SourceLocked, outcome.Result);
+            Assert.AreEqual(1, outcome.Shelf);
+            Assert.AreEqual(0, outcome.Slot);
+            Assert.AreEqual(-1, outcome.ToShelf);
+            Assert.IsFalse(input.HasSelection);
+        }
+
+        [Test]
+        public void TapMoveOntoLockedShelf_IsRejected()
+        {
+            var board = LockedBoard();
+            var input = new MoveInput(board);
+            input.Tap(At(2, 1));
+            var outcome = input.Tap(At(1, 2));
+            Assert.AreEqual(InputOutcomeKind.Rejected, outcome.Kind);
+            Assert.AreEqual(MoveResult.TargetLocked, outcome.Result);
+            Assert.AreEqual(2, outcome.Shelf);
+            Assert.AreEqual(B, board.GetShelf(2).GetFrontItem(1), "Nothing moved.");
+        }
+
+        [Test]
+        public void DragFromLockedShelf_DoesNotStart()
+        {
+            var input = new MoveInput(LockedBoard());
+            Assert.AreEqual(InputOutcomeKind.Ignored, input.BeginDrag(At(1, 0)).Kind);
+            Assert.IsFalse(input.IsDragging);
+        }
+
+        [Test]
+        public void DropOntoLockedShelf_IsRejected()
+        {
+            var input = new MoveInput(LockedBoard());
+            input.BeginDrag(At(2, 1));
+            var drop = input.Drop(At(1, 1));
+            Assert.AreEqual(InputOutcomeKind.Rejected, drop.Kind);
+            Assert.AreEqual(MoveResult.TargetLocked, drop.Result);
+        }
+
+        [Test]
+        public void AfterTheLockOpens_MovesOntoAndOffItWork()
+        {
+            var board = LockedBoard();
+            var input = new MoveInput(board);
+            input.Tap(At(2, 0));
+            Assert.AreEqual(InputOutcomeKind.Moved, input.Tap(At(0, 2)).Kind, "A onto shelf 0 clears and opens shelf 1.");
+            Assert.IsFalse(board.GetShelf(1).IsLocked);
+
+            input.Tap(At(2, 1));
+            Assert.AreEqual(InputOutcomeKind.Moved, input.Tap(At(1, 1)).Kind, "Onto the opened shelf.");
+            Assert.AreEqual(InputOutcomeKind.Selected, input.Tap(At(1, 0)).Kind, "Its items can be picked now.");
+        }
     }
 }

@@ -47,7 +47,10 @@ namespace Game.View
         Deselected,
         /// <summary>A move was made through <see cref="Board.TryMove(int,int,int,out MoveResult)"/>.</summary>
         Moved,
-        /// <summary>The move was refused by <see cref="Board.CanMove"/> (shake the item; snap back if dragged).</summary>
+        /// <summary>
+        /// The move was refused by <see cref="Board.CanMove"/>, or the item can't be picked up
+        /// (<see cref="Board.CanPick"/>, e.g. a locked shelf; ToShelf is then -1). Shake the item; snap back if dragged.
+        /// </summary>
         Rejected,
         /// <summary>A drag of an item began (lift it and follow the pointer).</summary>
         DragStarted,
@@ -90,7 +93,10 @@ namespace Game.View
     /// Mode tested. No rules of its own: whether a move is allowed is
     /// always <see cref="Board.CanMove"/>, and moves go through <see cref="Board.TryMove(int,int,int,out MoveResult)"/>.
     ///
-    /// Tap, nothing selected: an item selects it; anything else is ignored.
+    /// Whether an item may be picked up at all is <see cref="Board.CanPick"/> (a locked shelf's items can't be).
+    ///
+    /// Tap, nothing selected: an item selects it, or is Rejected (shake) when the board won't let it be picked;
+    /// anything else is ignored.
     /// Tap, item selected:
     /// <list type="bullet">
     /// <item>the selected item again, an empty part of its own shelf, or off the board: deselect (cancel);</item>
@@ -98,7 +104,8 @@ namespace Game.View
     /// <item>another shelf (anywhere on it): try the move. Ok moves; any refusal is Rejected (shake) and the selection
     /// is cleared, as when a dragged item snaps back.</item>
     /// </list>
-    /// Drag: starts only on an item (clearing any selection). Dropping on another shelf tries the move; a refusal is
+    /// Drag: starts only on an item that may be picked (clearing any selection); on any other item it is ignored, so
+    /// the release counts as a tap and gives the same shake. Dropping on another shelf tries the move; a refusal is
     /// Rejected (snap back with shake). Dropping on its own shelf (<see cref="MoveResult.SameShelf"/>, a cancel) or
     /// off the board returns home without a shake.
     /// </summary>
@@ -135,7 +142,13 @@ namespace Game.View
 
             if (!HasSelection)
             {
-                return HasItem(target) ? Select(target.Shelf, target.Slot) : InputOutcome.Ignored;
+                if (!HasItem(target)) return InputOutcome.Ignored;
+                var verdict = _board.CanPick(target.Shelf, target.Slot);
+                if (verdict != MoveResult.Ok)
+                {
+                    return new InputOutcome(InputOutcomeKind.Rejected, target.Shelf, target.Slot, -1, verdict);
+                }
+                return Select(target.Shelf, target.Slot);
             }
 
             int fromShelf = _shelf;
@@ -160,6 +173,7 @@ namespace Game.View
         public InputOutcome BeginDrag(BoardTarget target)
         {
             if (_dragging || !HasItem(target)) return InputOutcome.Ignored;
+            if (_board.CanPick(target.Shelf, target.Slot) != MoveResult.Ok) return InputOutcome.Ignored;
 
             _shelf = target.Shelf;
             _slot = target.Slot;
