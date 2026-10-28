@@ -74,8 +74,24 @@ namespace Game.Solver
 
         public static Board Build(string[][][] layers)
         {
+            return Build(layers, null);
+        }
+
+        /// <summary>
+        /// Like <see cref="Build(string[][][])"/>, with locked shelves: <paramref name="lockClears"/>[i] is shelf i's
+        /// lockClears (0 for a normal shelf); null for none.
+        /// </summary>
+        public static Board Build(string[][][] layers, IReadOnlyList<int> lockClears)
+        {
+            if (lockClears != null && lockClears.Count != layers.Length)
+            {
+                throw new ArgumentException("One lockClears value per shelf.", nameof(lockClears));
+            }
             var shelves = new Shelf[layers.Length];
-            for (int i = 0; i < layers.Length; i++) shelves[i] = new Shelf(layers[i]);
+            for (int i = 0; i < layers.Length; i++)
+            {
+                shelves[i] = new Shelf(layers[i], "s" + (i + 1), lockClears == null ? 0 : lockClears[i]);
+            }
             return new Board(shelves);
         }
     }

@@ -66,12 +66,93 @@ namespace Game.Solver
         public int LivenessNodeBudget { get; set; } = 500_000;
 
         /// <summary>
+        /// Whole-level wall-clock limit in seconds, shared by every phase of one analysis (shortest-solution search,
+        /// dead-end searches and simulated plays). When it runs out the analysis is Inconclusive (issue #31).
+        /// </summary>
+        public double LevelTimeLimitSeconds { get; set; } = 30;
+
+        /// <summary>
+        /// Whole-level node limit, shared by every phase of one analysis: each board the solver builds with the Core
+        /// rules (a search child, a dead-end search child or a simulated move) counts one. When it runs out the
+        /// analysis is Inconclusive (issue #31).
+        /// </summary>
+        public long LevelNodeBudget { get; set; } = 40_000_000;
+
+        /// <summary>
         /// Cross-check mode for tests: plain breadth-first search with no heuristic, no merging of equivalent shelves
         /// and shelf order kept in the state key. Much slower; gives the same minMoves by a simpler route.
         /// </summary>
         public bool ReferenceMode { get; set; }
 
         public static SolverOptions Default => new SolverOptions();
+    }
+
+    /// <summary>
+    /// One budget for a whole level analysis (issue #31): a node limit and a wall-clock limit that every phase charges.
+    /// Once either runs out, <see cref="Exhausted"/> stays true, <see cref="Reason"/> says which, and every phase stops
+    /// and reports Unknown / incomplete instead of continuing.
+    /// </summary>
+    public sealed class SearchBudget
+    {
+        private readonly System.Diagnostics.Stopwatch _stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        private int _sinceClockCheck;
+
+        public SearchBudget(long maxNodes, double timeLimitSeconds)
+        {
+            MaxNodes = maxNodes;
+            TimeLimitSeconds = timeLimitSeconds;
+        }
+
+        /// <summary>The level budget from <paramref name="options"/>, starting now.</summary>
+        public static SearchBudget For(SolverOptions options)
+        {
+            options = options ?? SolverOptions.Default;
+            return new SearchBudget(options.LevelNodeBudget, options.LevelTimeLimitSeconds);
+        }
+
+        public long MaxNodes { get; }
+        public double TimeLimitSeconds { get; }
+
+        /// <summary>Nodes charged so far, over all phases.</summary>
+        public long Used { get; private set; }
+
+        public double ElapsedSeconds => _stopwatch.Elapsed.TotalSeconds;
+
+        /// <summary>Why the budget ran out; null while it lasts.</summary>
+        public string Reason { get; private set; }
+
+        public bool Exhausted => Reason != null;
+
+        /// <summary>Counts <paramref name="nodes"/> more nodes. Returns false once the budget has run out.</summary>
+        public bool Charge(long nodes = 1)
+        {
+            if (Reason != null) return false;
+            Used += nodes;
+            if (Used > MaxNodes)
+            {
+                Reason = $"level node budget of {MaxNodes} boards ran out";
+                return false;
+            }
+            _sinceClockCheck += (int)Math.Min(nodes, 1024);
+            if (_sinceClockCheck >= 256)
+            {
+                _sinceClockCheck = 0;
+                return CheckClock();
+            }
+            return true;
+        }
+
+        /// <summary>Checks the wall clock now. Returns false once the budget has run out.</summary>
+        public bool CheckClock()
+        {
+            if (Reason != null) return false;
+            if (_stopwatch.Elapsed.TotalSeconds > TimeLimitSeconds)
+            {
+                Reason = $"level time limit of {TimeLimitSeconds:0.#} s ran out";
+                return false;
+            }
+            return true;
+        }
     }
 
     /// <summary>Deterministic SplitMix64 generator, so seeded results are identical on every machine and runtime.</summary>

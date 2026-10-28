@@ -4,111 +4,129 @@ using Game.Core;
 namespace Game.Solver
 {
     /// <summary>
-    /// Answers "can this board still be won?" by depth-first search over canonical states, trying the children with the
-    /// lowest <see cref="SearchContext.Heuristic"/> first. Answers are remembered across calls for one level:
+    /// Answers "can this board still be won?" by greedy best-first search over canonical states: the open state with
+    /// the lowest <see cref="SearchContext.Heuristic"/> is expanded next (deepest first on ties, then oldest), so a
+    /// search that wanders into a large lost region can still leave it for a better one. Answers are remembered across
+    /// calls for one level:
     /// <list type="bullet">
-    /// <item>a win found: every state on the current search path is alive;</item>
+    /// <item>a win found: every state on the line from the start to the win is alive;</item>
     /// <item>the search exhausted without a win: every state it visited is dead (everything reachable from them was
     /// visited or already known dead);</item>
-    /// <item>the per-call node budget ran out: the answer is null (unknown) and nothing is recorded.</item>
+    /// <item>the per-call node budget or the level's shared <see cref="SearchBudget"/> ran out: the answer is null
+    /// (unknown) and nothing is recorded.</item>
     /// </list>
+    /// The answers are facts about the board, so the search order only changes how fast they come, never what they are.
+    /// States are identified by the canonical <see cref="SearchContext.Key"/>, so answers carry over between boards
+    /// that differ only in shelf order or type names. Every move is applied by the Core <see cref="Board"/>.
     /// </summary>
     internal sealed class LivenessOracle
     {
-        private struct Child
-        {
-            public SolverMove Move;
-            public int H;
-            public int Order;
-            public StateKey Key;
-        }
-
-        private sealed class Frame
-        {
-            public Board Board;
-            public StateKey Key;
-            public List<Child> Children;
-            public int Next;
-        }
-
         private readonly SearchContext _context;
         private readonly int _budget;
+        private readonly SearchBudget _levelBudget;
+        private readonly Board _scratch;
         private readonly HashSet<StateKey> _alive = new HashSet<StateKey>();
         private readonly HashSet<StateKey> _dead = new HashSet<StateKey>();
         private readonly List<SolverMove> _moves = new List<SolverMove>();
+        private readonly List<SolverMove> _replay = new List<SolverMove>();
+        private readonly List<StateKey> _keys = new List<StateKey>();
 
-        public LivenessOracle(SearchContext context, int nodeBudget)
+        /// <param name="nodeBudget">States one search may add before answering unknown.</param>
+        /// <param name="levelBudget">The level's shared budget; null for none.</param>
+        public LivenessOracle(SearchContext context, int nodeBudget, SearchBudget levelBudget)
         {
             _context = context;
             _budget = nodeBudget;
+            _levelBudget = levelBudget ?? new SearchBudget(long.MaxValue, double.MaxValue);
+            _scratch = context.Root.Clone();
         }
 
-        public void MarkAlive(StateKey key) => _alive.Add(key);
+        public void MarkAlive(Board board)
+        {
+            if (!board.IsWon) _alive.Add(_context.Key(board));
+        }
 
+        /// <summary>
+        /// True if a win is still reachable, false if not, null if a budget ran out first. The board must descend from
+        /// the context's root.
+        /// </summary>
         public bool? IsAlive(Board board)
         {
-            return IsAlive(board, _context.Key(board));
-        }
-
-        public bool? IsAlive(Board board, StateKey key)
-        {
-            if (board.IsWon || _alive.Contains(key)) return true;
+            if (board.IsWon) return true;
+            var key = _context.Key(board);
+            if (_alive.Contains(key)) return true;
             if (_dead.Contains(key)) return false;
-
-            var visited = new HashSet<StateKey> { key };
-            var stack = new List<Frame> { new Frame { Board = board, Key = key } };
-            int nodes = 1;
-
-            while (stack.Count > 0)
+            if (_levelBudget.Exhausted) return null;
+            if (!board.HasLegalMove())
             {
-                var top = stack[stack.Count - 1];
-                if (top.Children == null)
+                _dead.Add(key);
+                return false;
+            }
+
+            // Children are filtered by the cheap exact key when they are generated and looked up by the canonical
+            // key (memo and dead marking) when they are expanded, so the relabelling runs once per expanded state.
+            var seen = new HashSet<StateKey> { _context.CheapKey(board) };
+            int rootH = _context.HeuristicOfLastRead();
+            var expanded = new HashSet<StateKey>();
+            var tree = new SearchTree();
+            var cache = new BoardCache(256);
+            var open = new MinHeap();
+            _keys.Clear();
+            tree.Add(-1, default, 0);
+            _keys.Add(key);
+            open.Push(rootH, 0, 0);
+
+            while (open.Count > 0)
+            {
+                int index = open.Pop();
+                var current = cache.Get(board, tree, index, _replay);
+                if (index > 0)
                 {
-                    if (Expand(top, visited))
+                    var currentKey = _context.Key(current);
+                    if (_alive.Contains(currentKey))
                     {
-                        for (int i = 0; i < stack.Count; i++) _alive.Add(stack[i].Key);
+                        MarkLineAlive(tree, tree.Parent[index]);
                         return true;
                     }
+                    if (_dead.Contains(currentKey)) continue;
+                    _keys[index] = currentKey;
                 }
+                if (!expanded.Add(_keys[index])) continue; // an equivalent state was expanded already
 
-                if (top.Next >= top.Children.Count)
+                int depth = tree.Depth[index];
+                _context.GenerateMoves(current, _moves, true);
+                for (int m = 0; m < _moves.Count; m++)
                 {
-                    stack.RemoveAt(stack.Count - 1);
-                    continue;
+                    if (!_levelBudget.Charge()) return null;
+                    var move = _moves[m];
+                    _scratch.CopyStateFrom(current);
+                    if (!_scratch.TryMove(move.FromShelf, move.FromSlot, move.ToShelf, out var result))
+                    {
+                        throw new System.InvalidOperationException($"Solver tried an illegal move {move}: {result}.");
+                    }
+                    if (_scratch.IsWon)
+                    {
+                        MarkLineAlive(tree, index);
+                        return true;
+                    }
+                    if (!seen.Add(_context.CheapKey(_scratch))) continue;
+                    if (!_scratch.HasLegalMove()) continue; // stuck: dead, nothing to explore
+                    if (tree.Count >= _budget) return null;
+                    int h = _context.HeuristicOfLastRead();
+                    int child = tree.Add(index, move, depth + 1);
+                    _keys.Add(default);
+                    open.Push(h, depth + 1, child);
                 }
-
-                var next = top.Children[top.Next++];
-                if (visited.Contains(next.Key) || _dead.Contains(next.Key)) continue;
-                if (++nodes > _budget) return null;
-                visited.Add(next.Key);
-                stack.Add(new Frame { Board = SearchContext.Apply(top.Board, next.Move), Key = next.Key });
             }
 
-            foreach (var dead in visited) _dead.Add(dead);
+            // Everything reachable from the start was explored without a win.
+            foreach (var dead in expanded) _dead.Add(dead);
             return false;
         }
 
-        // Fills frame.Children (best first). Returns true if a child is won or already known alive.
-        private bool Expand(Frame frame, HashSet<StateKey> visited)
+        private void MarkLineAlive(SearchTree tree, int index)
         {
-            frame.Children = new List<Child>();
-            _context.GenerateMoves(frame.Board, _moves, true);
-            for (int m = 0; m < _moves.Count; m++)
-            {
-                var child = SearchContext.Apply(frame.Board, _moves[m]);
-                if (child.IsWon) return true;
-                var key = _context.Key(child);
-                if (_alive.Contains(key)) return true;
-                if (_dead.Contains(key) || visited.Contains(key)) continue;
-                if (!child.HasLegalMove())
-                {
-                    _dead.Add(key);
-                    continue;
-                }
-                frame.Children.Add(new Child { Move = _moves[m], H = _context.Heuristic(child), Order = m, Key = key });
-            }
-            frame.Children.Sort((a, b) => a.H != b.H ? a.H.CompareTo(b.H) : a.Order.CompareTo(b.Order));
-            return false;
+            for (int i = index; i >= 0; i = tree.Parent[i]) _alive.Add(_keys[i]);
         }
     }
 }
