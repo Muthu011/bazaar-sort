@@ -8,7 +8,7 @@ You are the level designer for Bazaar Sort. Read `CLAUDE.md`, `docs/game-design.
 
 Rules for every pack (normally 10 levels):
 - Sawtooth difficulty: easy, easy, medium, medium, hard, breather, medium, hard, hard, boss.
-- Target first-try win rates (from the solver's estimate): levels 1–10 above 90%, normal 70–85%, hard and boss 35–50%.
+- Target first-try win rates (from the solver's estimate): levels 1–6 and 8–9 at least 90%; level 7 (designed near-loss) and level 10 (boss) at least 75%; from level 11, normal 70–85%, hard and boss 35–50%.
 - Only introduce one new mechanic per pack, on a breather-or-easier level, and use it at least 4 more times in the pack.
 - Use objects from the world's object list in `docs/game-design.md`. Every object type count must be a multiple of 3 (Set Tray objects excepted).
 - Each level must be unique: no two levels with the same layout after mirroring or swapping object types.

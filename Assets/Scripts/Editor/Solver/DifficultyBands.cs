@@ -25,7 +25,9 @@ namespace Game.Solver
     /// The one place that maps a level to its target first-try win-rate band (estWinRate from
     /// <see cref="PlaySimulator"/>). Source: .claude/agents/level-designer.md.
     /// <list type="table">
-    /// <item><term>levels 1 to 10, any role</term><description>0.90 to 1.00 ("above 90%"; 0.90 itself passes)</description></item>
+    /// <item><term>levels 1 to 10, any role</term><description>0.90 to 1.00 ("above 90%"; 0.90 itself passes),
+    /// except levels 7 and 10</description></item>
+    /// <item><term>level 7 (designed near-loss) and level 10 (boss)</term><description>0.75 to 1.00 (Muthu, Oct 2026)</description></item>
     /// <item><term>medium ("normal")</term><description>0.70 to 0.85</description></item>
     /// <item><term>hard, boss</term><description>0.35 to 0.50</description></item>
     /// <item><term>easy (from level 11)</term><description>0.85 to 1.00: not named in the targets; easier than
@@ -41,7 +43,11 @@ namespace Game.Solver
     {
         public const int OnboardingLevels = 10;
 
+        public const int NearLossLevel = 7;
+        public const int FirstBossLevel = 10;
+
         public static readonly WinRateBand Onboarding = new WinRateBand("levels 1-10", 0.90, 1.00);
+        public static readonly WinRateBand OnboardingPeak = new WinRateBand("levels 7 and 10", 0.75, 1.00);
         public static readonly WinRateBand Easy = new WinRateBand("easy", 0.85, 1.00);
         public static readonly WinRateBand Breather = new WinRateBand("breather", 0.85, 1.00);
         public static readonly WinRateBand Medium = new WinRateBand("medium", 0.70, 0.85);
@@ -52,7 +58,7 @@ namespace Game.Solver
         {
             if (levelIndex >= 1 && levelIndex <= OnboardingLevels)
             {
-                band = Onboarding;
+                band = levelIndex == NearLossLevel || levelIndex == FirstBossLevel ? OnboardingPeak : Onboarding;
                 return true;
             }
 

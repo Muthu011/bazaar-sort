@@ -65,5 +65,5 @@ is applied by `Game.Core.Board`, so the solver uses exactly the game's rules.
   `lockClears`. Two levels with the same hash are duplicates.
 
 Target `estWinRate` bands (`Game.Solver.DifficultyBands`, from the level-designer targets): levels 1 to 10 0.90 to
-1.00 whatever the role; `medium` 0.70 to 0.85; `hard` and `boss` 0.35 to 0.50; `easy` and `breather` (from level 11)
+1.00 whatever the role, except level 7 (designed near-loss) and level 10 (boss) at 0.75 to 1.00; `medium` 0.70 to 0.85; `hard` and `boss` 0.35 to 0.50; `easy` and `breather` (from level 11)
 0.85 to 1.00. The level number is `index`.
