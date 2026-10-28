@@ -80,5 +80,43 @@ namespace Game.Tests.EditMode
             Assert.AreEqual("c,b,b", Front(copy, 1));
             Assert.AreEqual("-,b,b", Front(board, 1));
         }
+
+        // Issue #31: the solver tries moves on one scratch board instead of cloning for every move.
+        [Test]
+        public void Board_CopyStateFrom_MatchesTheSourceAndStaysIndependent()
+        {
+            var root = new Board(
+                new Shelf(new[] { "a", "a", null }, new[] { "b", "c", "c" }),
+                new Shelf(new[] { "a", "b", "b" }),
+                Shelf.Locked(1, new[] { "c", null, null }));
+            var source = root.Clone();
+            Assert.IsTrue(source.TryMove(1, 0, 0)); // clears a, opens the lock, reveals b,c,c
+
+            var target = root.Clone();
+            target.CopyStateFrom(source);
+
+            Assert.AreEqual(source.ItemCount, target.ItemCount);
+            for (int i = 0; i < root.ShelfCount; i++)
+            {
+                for (int slot = 0; slot < Shelf.SlotCount; slot++)
+                {
+                    Assert.AreEqual(source.GetShelf(i).GetFrontItem(slot), target.GetShelf(i).GetFrontItem(slot));
+                }
+                Assert.AreEqual(source.GetShelf(i).HiddenLayerCount, target.GetShelf(i).HiddenLayerCount);
+                Assert.AreEqual(source.GetShelf(i).LockClearsLeft, target.GetShelf(i).LockClearsLeft);
+            }
+
+            Assert.IsTrue(target.TryMove(2, 0, 1)); // c from the opened shelf onto shelf 1
+            Assert.AreEqual(null, source.GetShelf(1).GetFrontItem(0));
+            Assert.AreEqual("c", target.GetShelf(1).GetFrontItem(0));
+        }
+
+        [Test]
+        public void Board_CopyStateFrom_RejectsAnUnrelatedBoard()
+        {
+            var a = new Board(new Shelf(new[] { "a", "a", null }), new Shelf(new[] { "a", null, null }));
+            var b = new Board(new Shelf(new[] { "a", "a", null }), new Shelf(new[] { "a", null, null }));
+            Assert.Throws<System.ArgumentException>(() => a.CopyStateFrom(b));
+        }
     }
 }

@@ -140,7 +140,39 @@ namespace Game.Core
             {
                 shelves[i] = _shelves[i].Clone();
             }
-            return new Board(shelves);
+            return new Board(shelves, _itemCount);
+        }
+
+        // For Clone: the shelves are fresh copies of a settled board, so the checks and settling of the public
+        // constructor are not needed.
+        private Board(Shelf[] clonedShelves, int itemCount)
+        {
+            _shelves = clonedShelves;
+            _justOpened = new bool[clonedShelves.Length];
+            _itemCount = itemCount;
+        }
+
+        /// <summary>
+        /// Overwrites this board's state with <paramref name="source"/>'s, without allocating. Both boards must come
+        /// from one board by <see cref="Clone"/> (directly or through other clones). Like a fresh clone, the result has
+        /// not raised Won or Stuck; event subscribers are kept. For search tools that try many moves from one board.
+        /// </summary>
+        public void CopyStateFrom(Board source)
+        {
+            if (source == null) throw new ArgumentNullException(nameof(source));
+            if (source._shelves.Length != _shelves.Length)
+            {
+                throw new ArgumentException("Boards must be clones of the same board.", nameof(source));
+            }
+            for (int i = 0; i < _shelves.Length; i++)
+            {
+                _shelves[i].CopyStateFrom(source._shelves[i]);
+                _justOpened[i] = false;
+            }
+            _itemCount = source._itemCount;
+            _wonRaised = false;
+            _stuckRaised = false;
+            _pendingUnlocks = 0;
         }
 
         public int ShelfCount => _shelves.Length;

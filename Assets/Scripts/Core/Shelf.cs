@@ -227,6 +227,23 @@ namespace Game.Core
         }
 
         /// <summary>
+        /// Makes this shelf's state equal to <paramref name="other"/>'s, without allocating, for
+        /// <see cref="Board.CopyStateFrom"/>. Both must be copies of one shelf (they share its hidden layers).
+        /// Unlike <see cref="Clone"/> it lists the mutable fields, so new per-shelf state must be added here too
+        /// (BoardCloneTests compare it with a clone).
+        /// </summary>
+        internal void CopyStateFrom(Shelf other)
+        {
+            if (!ReferenceEquals(_hidden, other._hidden))
+            {
+                throw new ArgumentException("Shelves must be copies of the same shelf.", nameof(other));
+            }
+            for (int slot = 0; slot < SlotCount; slot++) _front[slot] = other._front[slot];
+            _nextHidden = other._nextHidden;
+            _lockClearsLeft = other._lockClearsLeft;
+        }
+
+        /// <summary>
         /// Moves the next hidden layer into the front row. Only valid when the front row is empty and a hidden
         /// layer remains.
         /// </summary>
