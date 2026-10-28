@@ -1,4 +1,5 @@
 using Game.Core;
+using Game.View;
 using NUnit.Framework;
 
 namespace Game.Tests.EditMode

@@ -1,6 +1,7 @@
 using System;
+using Game.Core;
 
-namespace Game.Core
+namespace Game.View
 {
     /// <summary>
     /// Where a pointer is on the board, as found by the view's hit test. Pure data: the view turns screen pixels into
@@ -84,7 +85,9 @@ namespace Game.Core
     }
 
     /// <summary>
-    /// The tap-to-pick, tap-to-drop and drag state machine. Pure C#, no rules of its own: whether a move is allowed is
+    /// The tap-to-pick, tap-to-drop and drag state machine. Lives in the View/input layer because selection and drag
+    /// are interaction state, not game rules (Core holds rules only). Pure C# with no UnityEngine calls, so it is Edit
+    /// Mode tested. No rules of its own: whether a move is allowed is
     /// always <see cref="Board.CanMove"/>, and moves go through <see cref="Board.TryMove(int,int,int,out MoveResult)"/>.
     ///
     /// Tap, nothing selected: an item selects it; anything else is ignored.
