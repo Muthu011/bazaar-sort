@@ -255,6 +255,158 @@ namespace Game.EditorTools
             }
         }
 
+        /// <summary>A portrait phone for issue #40 screenshots: size, density and simulated safe-area insets (px).</summary>
+        public readonly struct Phone
+        {
+            public Phone(int width, int height, float density, int bottomInset, int topInset)
+            {
+                Width = width;
+                Height = height;
+                Density = density;
+                BottomInset = bottomInset;
+                TopInset = topInset;
+            }
+
+            public int Width { get; }
+            public int Height { get; }
+            public float Density { get; }
+            public int BottomInset { get; }
+            public int TopInset { get; }
+            public Rect SafeArea => new Rect(0, BottomInset, Width, Height - BottomInset - TopInset);
+        }
+
+        /// <summary>
+        /// The three Game view presets (issue #40) at phone density: 1080x2400 at 3 px/dp with a 110 px camera cutout and
+        /// a 63 px gesture bar; 1080x1920 at 3 px/dp full screen (no cutout, the game hides the status bar); 720x1600 at
+        /// 2 px/dp with a 74 px cutout and a 42 px gesture bar. Same insets as the Edit and Play Mode layout tests.
+        /// </summary>
+        public static readonly Phone[] PortraitPhones =
+        {
+            new Phone(1080, 2400, 3f, 63, 110),
+            new Phone(1080, 1920, 3f, 0, 0),
+            new Phone(720, 1600, 2f, 42, 74),
+        };
+
+        /// <summary>
+        /// Issue #40: the full portrait screen (board, top and bottom bars, dev Levels button and fps readout) for each
+        /// level index in <paramref name="levelIndices"/> (0-based in the level list) on each of <see cref="PortraitPhones"/>,
+        /// into "&lt;level&gt;_&lt;w&gt;x&lt;h&gt;.png", plus "settings_open_1080x2400.png" on the first level. The simulated
+        /// cutout and gesture bar are drawn as dark strips with a camera dot and a home line, so the insets can be seen.
+        /// The fps readout reads "0 fps" because a still frame has no frame history. Returns the written paths.
+        /// </summary>
+        public static List<string> CapturePortraitScreenshots(string outputDir, params int[] levelIndices)
+        {
+            Directory.CreateDirectory(outputDir);
+            var written = new List<string>();
+            var levels = LevelListSync.Sync().Levels;
+            foreach (int index in levelIndices)
+            {
+                foreach (var phone in PortraitPhones)
+                {
+                    string path = Path.Combine(outputDir, $"{levels[index].name}_{phone.Width}x{phone.Height}.png");
+                    var result = CapturePortrait(levels, index, phone, false, path);
+                    if (result != null) written.Add(result);
+                }
+            }
+            if (levelIndices.Length > 0)
+            {
+                var phone = PortraitPhones[0];
+                string path = Path.Combine(outputDir, $"settings_open_{phone.Width}x{phone.Height}.png");
+                var result = CapturePortrait(levels, levelIndices[0], phone, true, path);
+                if (result != null) written.Add(result);
+            }
+            return written;
+        }
+
+        private static string CapturePortrait(TextAsset[] levels, int index, Phone phone, bool settingsOpen, string path)
+        {
+            var safe = phone.SafeArea;
+            var target = new RenderTexture(phone.Width, phone.Height, 24, RenderTextureFormat.ARGB32);
+            var cameraObject = new GameObject("Screenshot Camera") { hideFlags = HideFlags.HideAndDontSave };
+            var viewObject = new GameObject("Screenshot Board View") { hideFlags = HideFlags.HideAndDontSave };
+            var hudObject = new GameObject("Screenshot HUD") { hideFlags = HideFlags.HideAndDontSave };
+            var overlayObject = new GameObject("Screenshot Dev Overlay") { hideFlags = HideFlags.HideAndDontSave };
+            var previousActive = RenderTexture.active;
+            try
+            {
+                var camera = cameraObject.AddComponent<Camera>();
+                camera.targetTexture = target;
+                var view = viewObject.AddComponent<BoardView>();
+                var bootstrap = viewObject.AddComponent<LevelBootstrap>();
+                bootstrap.Configure(levels, view, camera);
+                if (!bootstrap.LoadLevel(index)) return null;
+                view.Bind(view.Board, camera, safe, BoardLayoutSettings.Default);
+
+                var hud = hudObject.AddComponent<GameHud>();
+                hud.Configure(view, bootstrap, camera);
+                hud.Build(camera);
+                hud.Layout(safe, phone.Density);
+                hud.ShowLevel(index + 1);
+                if (settingsOpen) hud.OpenSettings();
+
+                var overlay = overlayObject.AddComponent<DevOverlay>();
+                overlay.FpsEnabled = DevBuild.IsFpsReadoutEnabled(true); // a development build, like the editor
+                overlay.Configure(bootstrap, camera);
+                overlay.Build();
+                overlay.Layout(safe, phone.Density);
+
+                Canvas.ForceUpdateCanvases();
+                camera.Render();
+
+                RenderTexture.active = target;
+                var image = new Texture2D(phone.Width, phone.Height, TextureFormat.RGB24, false);
+                image.ReadPixels(new Rect(0, 0, phone.Width, phone.Height), 0, 0);
+                DrawInsets(image, phone);
+                image.Apply();
+                File.WriteAllBytes(path, image.EncodeToPNG());
+                Object.DestroyImmediate(image);
+                return path;
+            }
+            finally
+            {
+                RenderTexture.active = previousActive;
+                Object.DestroyImmediate(overlayObject);
+                Object.DestroyImmediate(hudObject);
+                Object.DestroyImmediate(viewObject);
+                Object.DestroyImmediate(cameraObject);
+                target.Release();
+                Object.DestroyImmediate(target);
+            }
+        }
+
+        /// <summary>Darkens the simulated cutout and gesture-bar insets and draws a camera dot and a home line.</summary>
+        private static void DrawInsets(Texture2D image, Phone phone)
+        {
+            var strip = new Color(0.05f, 0.05f, 0.06f);
+            var line = new Color(0.85f, 0.85f, 0.85f);
+            int w = phone.Width;
+            int h = phone.Height;
+            float unit = phone.Density;
+            for (int y = 0; y < phone.BottomInset; y++)
+                for (int x = 0; x < w; x++) image.SetPixel(x, y, strip);
+            for (int y = h - phone.TopInset; y < h; y++)
+                for (int x = 0; x < w; x++) image.SetPixel(x, y, strip);
+
+            if (phone.TopInset > 0)
+            {
+                // Punch-hole camera, 12 dp across, centred in the cutout strip.
+                float r = 6f * unit;
+                var c = new Vector2(w * 0.5f, h - phone.TopInset * 0.5f);
+                for (int y = (int)(c.y - r); y <= (int)(c.y + r); y++)
+                    for (int x = (int)(c.x - r); x <= (int)(c.x + r); x++)
+                        if ((new Vector2(x, y) - c).sqrMagnitude <= r * r) image.SetPixel(x, y, new Color(0.2f, 0.22f, 0.3f));
+            }
+            if (phone.BottomInset > 0)
+            {
+                // Gesture (home) line, 108 x 4 dp.
+                int half = (int)(54f * unit);
+                int thick = (int)(2f * unit);
+                int cy = phone.BottomInset / 2;
+                for (int y = cy - thick; y < cy + thick; y++)
+                    for (int x = w / 2 - half; x < w / 2 + half; x++) image.SetPixel(x, y, line);
+            }
+        }
+
         /// <summary>
         /// Four shelves; moving s2's idli stand onto s1 fills s1 and reveals a full row on s2, leaving no free slot:
         /// the board is stuck. Same shape as the Play Mode stuck test level.

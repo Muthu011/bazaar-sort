@@ -33,6 +33,15 @@ namespace Game.Tests.EditMode
             CollectionAssert.IsNotEmpty(LevelFiles());
         }
 
+        /// <summary>12 shelves is the cap for the whole game (Muthu, 2026-10-29, issue #40).</summary>
+        [TestCaseSource(nameof(LevelFiles))]
+        public void Level_HasAtMostTwelveShelves(string path)
+        {
+            var load = Game.Levels.LevelLoader.Load(File.ReadAllText(path), Path.GetFileNameWithoutExtension(path));
+            Assert.IsTrue(load.Success, "level loads");
+            Assert.LessOrEqual(load.Board.ShelfCount, 12, "at most 12 shelves per level");
+        }
+
         [TestCaseSource(nameof(LevelFiles))]
         public void Level_IsSolvable(string path)
         {

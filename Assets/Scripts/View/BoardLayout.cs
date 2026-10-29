@@ -244,7 +244,8 @@ namespace Game.View
         /// <summary>
         /// Lays out <paramref name="shelfCount"/> shelves of <paramref name="slotCount"/> slots inside
         /// <paramref name="safeArea"/>. Tries 1..<see cref="BoardLayoutSettings.MaxColumns"/> columns and keeps the
-        /// one with the largest tiles (fewer columns on a tie). Shelves fill rows top to bottom, left to right; a
+        /// one with the largest tiles (fewer columns on a tie): the biggest items, so small boards stay one column
+        /// (Muthu, 2026-10-29, issue #40). Shelves fill rows top to bottom, left to right; a
         /// short last row is centred. The grid is centred in the playfield.
         /// </summary>
         public static BoardLayout Compute(int shelfCount, int slotCount, Rect safeArea, BoardLayoutSettings settings)

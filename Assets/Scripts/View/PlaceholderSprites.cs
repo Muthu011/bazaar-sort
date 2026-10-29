@@ -35,6 +35,7 @@ namespace Game.View
         private static Sprite _dot;
         private static Sprite _star;
         private static Sprite _coin;
+        private static Sprite _gear;
 
         /// <summary>
         /// A soft white ellipse, twice as wide as tall, one world unit wide: the pick-up and flight shadow (tint it dark
@@ -50,6 +51,9 @@ namespace Game.View
 
         /// <summary>A gold coin (disc with a darker rim and a lighter face), one world unit across: the clear coin.</summary>
         public static Sprite Coin => _coin != null ? _coin : (_coin = CreateCoin());
+
+        /// <summary>A white eight-tooth gear with a hole, one world unit across: the settings button icon (issue #40).</summary>
+        public static Sprite Gear => _gear != null ? _gear : (_gear = CreateGear());
 
         /// <summary>One world unit across at its natural size; 9-slice borders are the corner radius.</summary>
         public static Sprite RoundedSquare
@@ -198,6 +202,27 @@ namespace Game.View
                 }
             }
             return Finish(texture, pixels, EffectSize, EffectSize);
+        }
+
+        private static Sprite CreateGear()
+        {
+            const float c = EffectSize * 0.5f;
+            const float outer = EffectSize * 0.47f;
+            const float body = EffectSize * 0.35f;
+            const float hole = EffectSize * 0.14f;
+            const int teeth = 8;
+            return Build("PlaceholderGear", EffectSize, EffectSize, (x, y) =>
+            {
+                float dx = x - c;
+                float dy = y - c;
+                float d = Mathf.Sqrt(dx * dx + dy * dy);
+                // Each tooth is half of its angular period; soften its sides by their distance in pixels at this radius.
+                float t = Mathf.Repeat(Mathf.Atan2(dy, dx) * teeth / (2f * Mathf.PI), 1f);
+                float side = (0.25f - Mathf.Abs(t - 0.5f)) * (2f * Mathf.PI / teeth) * d; // > 0 inside the tooth
+                float tooth = Mathf.Min(Mathf.Clamp01(side + 0.5f), Mathf.Clamp01(outer - d + 0.5f));
+                float ring = Mathf.Max(Mathf.Clamp01(body - d + 0.5f), tooth);
+                return Mathf.Min(ring, Mathf.Clamp01(d - hole + 0.5f));
+            });
         }
 
         private static Sprite Build(string name, int width, int height, System.Func<float, float, float> alpha)

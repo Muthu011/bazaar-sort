@@ -38,6 +38,7 @@ One JSON file per level: `Assets/Levels/World<N>/w<N>_l<NNN>.json`.
 ```
 
 Rules:
+- At most 12 shelves per level, for the whole game (Muthu, 2026-10-29). The loader rejects more (`TooManyShelves`).
 - Each shelf has exactly 3 slots per layer.
 - Every object type appears a multiple of 3 times, except objects used by trays (which must match their tray sets exactly).
 - Object ids come from `docs/game-design.md` world lists, in snake_case.

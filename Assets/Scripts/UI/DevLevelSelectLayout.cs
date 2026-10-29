@@ -6,7 +6,7 @@ namespace Game.UI
     public readonly struct DevLevelSelectMetrics
     {
         public DevLevelSelectMetrics(Vector2 toggle, Vector2 toggleCentre, float topReserve, int count, int columns,
-            float cell, Vector2 card, Vector2 safeSize, Vector2 action, float fpsCentreFromBottom)
+            float cell, Vector2 card, Vector2 safeSize, Vector2 action, Vector2 fpsCentre, Vector2 worstCentre)
         {
             Toggle = toggle;
             ToggleCentre = toggleCentre;
@@ -17,7 +17,8 @@ namespace Game.UI
             Card = card;
             SafeSize = safeSize;
             Action = action;
-            FpsCentreFromBottom = fpsCentreFromBottom;
+            FpsCentre = fpsCentre;
+            WorstCentre = worstCentre;
         }
 
         /// <summary>The "Levels" button that opens the panel.</summary>
@@ -47,8 +48,21 @@ namespace Game.UI
         /// <summary>Size of each of the two bottom buttons (Reset progress, Close).</summary>
         public Vector2 Action { get; }
 
-        /// <summary>Distance from the bottom of the safe area to the centre of the fps readout.</summary>
-        public float FpsCentreFromBottom { get; }
+        /// <summary>
+        /// Centre of the fps line ("60 fps") from the top-right corner of the safe area (x left and y down are
+        /// negative). The readout sits at the right of the top bar (issue #40), right-aligned, the frame-time line under it.
+        /// </summary>
+        public Vector2 FpsCentre { get; }
+
+        /// <summary>Centre of the worst-frame line ("max 17 ms"), same frame as <see cref="FpsCentre"/>.</summary>
+        public Vector2 WorstCentre { get; }
+
+        /// <summary>Size of each fps readout line.</summary>
+        public Vector2 FpsLine => new Vector2(DevLevelSelectLayout.FpsWidthDp, DevLevelSelectLayout.FpsHeightDp);
+
+        /// <summary>True when both fps lines sit inside the top reserve.</summary>
+        public bool FpsFitsInReserve => -WorstCentre.y + DevLevelSelectLayout.FpsHeightDp * 0.5f <= TopReserve + 0.001f
+            && -FpsCentre.y - DevLevelSelectLayout.FpsHeightDp * 0.5f >= -0.001f;
 
         public float GridWidth => Columns * Cell + (Columns - 1) * Gap;
         public float GridHeight => Rows * Cell + (Rows - 1) * Gap;
@@ -86,7 +100,8 @@ namespace Game.UI
     /// board's top HUD reserve (<c>BoardLayoutSettings.TopReserveFraction</c>), clear of the shelves and of the centred
     /// status line, opens a card centred in the safe area with one square cell per level, up to
     /// <see cref="MaxColumns"/> per row, and Reset progress / Close below. Every button is at least the 48 dp touch floor.
-    /// The fps readout sits in the bottom reserve. Pure math, Edit Mode tested.
+    /// The fps readout sits at the right of the top reserve (issue #40; the bottom bar holds boosters, coins and
+    /// settings). Pure math, Edit Mode tested.
     /// </summary>
     public static class DevLevelSelectLayout
     {
@@ -104,6 +119,7 @@ namespace Game.UI
         public const int ActionFontDp = 15;
         public const int FpsFontDp = 14;
         public const float FpsHeightDp = 20f;
+        public const float FpsWidthDp = 90f;
 
         public static DevLevelSelectMetrics Compute(Vector2 safeSizeDp, float topReserveFraction,
             float bottomReserveFraction, int count)
@@ -132,11 +148,14 @@ namespace Game.UI
             var card = new Vector2(contentWidth + 2f * CardPaddingDp,
                 CardPaddingDp + TitleHeightDp + GapDp + gridHeight + 2f * GapDp + action.y + CardPaddingDp);
 
-            float bottomReserve = Mathf.Max(0f, safeSizeDp.y * bottomReserveFraction);
-            float fpsCentre = Mathf.Max(bottomReserve * 0.5f, FpsHeightDp * 0.5f);
+            // Fps readout: two right-aligned lines centred in the top reserve (pinned to the top when it is short).
+            float fpsMid = Mathf.Max(reserve * 0.5f, FpsHeightDp);
+            float fpsX = -SideMarginDp - FpsWidthDp * 0.5f;
+            var fpsCentre = new Vector2(fpsX, -(fpsMid - FpsHeightDp * 0.5f));
+            var worstCentre = new Vector2(fpsX, -(fpsMid + FpsHeightDp * 0.5f));
 
             return new DevLevelSelectMetrics(toggle, toggleCentre, reserve, count, columns, cell, card, safeSizeDp,
-                action, fpsCentre);
+                action, fpsCentre, worstCentre);
         }
     }
 }
