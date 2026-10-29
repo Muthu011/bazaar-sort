@@ -99,19 +99,20 @@ Colour-blind note:
 ### Reference resolution and how sizes are derived
 - Design resolution is 1080 x 2400, portrait, about 3 px per dp (xxhdpi, 480 dpi; 1 dp = dpi / 160 px as in `Assets/Scripts/View/ScreenDensity.cs`). 720 x 1600 (xhdpi, 2 px per dp) is the small-phone check.
 - The UI is built with `CanvasScaler` in ConstantPixelSize mode (`Assets/Scripts/UI/GameHud.cs`, `ResultPanels.cs`), so UI sizes are dp times density. World units are screen pixels / 100 (`BoardView.PixelsPerUnit`). So the art is placed in screen pixels and must be sized for those.
-- Board layout (`Assets/Scripts/View/BoardLayout.cs`, `BoardLayoutSettings.Default`): the item picture is one "tile". Shelf width is 3 slots + 4 x 0.12 padding = 3.48 tiles. Shelf height is 1 + 0.35 hidden strip + 2 x 0.12 = 1.59 tiles. Column gap 0.25 tile, row gap 0.35 tile, up to 3 columns, 4% side margin, 10% top and 10% bottom reserve. Every shelf holds exactly 3 slots (`docs/level-schema.md`).
+- Board layout (`Assets/Scripts/View/BoardLayout.cs`, `BoardLayoutSettings.Default`): the item picture is one "tile". Shelf width is 3 slots + 4 x 0.12 padding = 3.48 tiles. Shelf height is 1 + 0.35 hidden strip + 2 x 0.12 = 1.59 tiles. Column gap 0.25 tile, row gap 0.35 tile, 2 or 3 columns (issue #40: shelves fill the width on portrait phones), 4% side margin, 10% top and 10% bottom reserve of the safe area (the top bar: level number, dev Levels button; the bottom bar: booster slots, coins, settings). Every shelf holds exactly 3 slots (`docs/level-schema.md`).
 - Tile size from that layout on 1080 x 2400 (computed by the same formula as `BoardLayout.Compute`):
 
-| Shelves | Columns | Tile (px) | Tile (dp) |
-| --- | --- | --- | --- |
-| 4 | 1 | 259 | 86 |
-| 6 | 1 | 170 | 57 |
-| 8 | 2 | 138 | 46 |
-| 14 | 2 | 137.8 | 46 |
-| 14 on 720 x 1600 | 2 | 92 | 46 |
+| Screen (safe area) | Shelves | Columns | Tile (px) | Tile (dp) | Smallest touch (dp) |
+| --- | --- | --- | --- | --- | --- |
+| 1080 x 2400, full | 4 to 14 | 2 | 137.8 | 46 | 51.4 |
+| 1080 x 2400, 110 px cutout + 63 px gesture bar | 4 to 12 | 2 | 137.8 | 46 | 51.4 |
+| same | 13 to 14 | 2 | 134.7 | 45 | 50.3 |
+| 1080 x 1920 | 4 to 10 | 2 | 137.8 | 46 | 51.4 |
+| 1080 x 1920 | 13 to 14 | 2 | 116.1 | 39 | 48.0 |
+| 720 x 1600 (2 px/dp), 74 px cutout + 42 px gesture bar | 4 to 12 | 2 | 91.9 | 46 | 51.4 |
 
-- So an object is shown between about 138 px (46 dp, 8 shelves, the worst case for levels 1 to 20) and 259 px (86 dp, 4 shelves). The 48 dp touch rule (`BoardLayout.TargetTouchDp`, floor `FloorTouchDp` 44) is met by the touch area growing into the gaps, but the picture itself is about 46 dp at its smallest. This is why the readability test below uses 48 dp.
-- Source size is 2x the largest display size where practical, so the game downscales and mipmaps; it never upscales art. The only stretching is the flat centre of a 9-slice panel, which carries no detail. Object source: 512 px (259 px max display is 1.98x). Game import: 512 px max, compressed for Android (import settings are described in `.claude/agents/art-director.md`; provenance goes in `docs/art-provenance.csv`).
+- So an object is shown at about 138 px (46 dp) on a 1080 px wide phone for every board of levels 1 to 20 (up to 8 shelves), and down to 116 px (39 dp) for 13 to 14 shelves on 16:9. Until issue #40 a 4-shelf board used one column with 259 px (86 dp) tiles. The 48 dp touch rule (`BoardLayout.TargetTouchDp`, floor `FloorTouchDp` 44) is met by the touch area growing into the gaps, but the picture itself is about 46 dp for levels 1 to 20 and 39 dp at its smallest (13 to 14 shelves on 16:9). This is why the readability test below uses 48 dp.
+- Source size is 2x the largest display size where practical, so the game downscales and mipmaps; it never upscales art. The only stretching is the flat centre of a 9-slice panel, which carries no detail. Object source: 512 px (written for the old 259 px maximum; since issue #40 the largest display is 138 px, so 512 px is about 3.7x; whether to keep 512 is an open question for Muthu). Game import: 512 px max, compressed for Android (import settings are described in `.claude/agents/art-director.md`; provenance goes in `docs/art-provenance.csv`).
 - Other sizes come from UI constants: button height 56 dp (`ResultPanelLayout.ButtonHeightDp`), card max width 320 dp (`MaxCardWidthDp`), star 52 dp (`StarDp`), HUD counter 84 x 40 dp (`HudLayout.CounterWidthDp/CounterHeightDp`), padlock width 0.55 tile with aspect 70/64 (`BoardView.PadlockWidthTiles`, `PlaceholderSprites.PadlockAspect`).
 
 ### Asset list (World 1)
@@ -119,7 +120,7 @@ All PNG, RGBA, transparent background unless marked, sRGB. "Display" is at 1080 
 
 | Asset | Source size (px) | Display size | Notes |
 | --- | --- | --- | --- |
-| `tumbler` | 512 x 512 | 138 to 259 px (46 to 86 dp) | Object rule: within a 464 x 464 safe box, centred, base on the bottom 24 px |
+| `tumbler` | 512 x 512 | 116 to 138 px (39 to 46 dp) | Object rule: within a 464 x 464 safe box, centred, base on the bottom 24 px |
 | `pressure_cooker` | 512 x 512 | same | same |
 | `idli_stand` | 512 x 512 | same | same |
 | `tawa` | 512 x 512 | same | same |
@@ -129,12 +130,12 @@ All PNG, RGBA, transparent background unless marked, sRGB. "Display" is at 1080 
 | `brass_kudam` | 512 x 512 | same | same |
 | `rolling_pin` | 512 x 512 | same | same |
 | `chai_kettle` | 512 x 512 | same | same |
-| Shelf (one, all 3-slot shelves) | 1808 x 826 | 902 x 412 px at 4 shelves, 480 x 219 px at 8 shelves | Aspect 3.48 : 1.59. Plank plus back panel, hidden-layer strip across the top 22% (0.35 / 1.59). Locked state is drawn in code. |
+| Shelf (one, all 3-slot shelves) | 1808 x 826 | 480 x 219 px (2 per row, 1080 px wide screen); 404 x 185 px at 13 to 14 shelves on 1080 x 1920 | Aspect 3.48 : 1.59. Plank plus back panel, hidden-layer strip across the top 22% (0.35 / 1.59). Locked state is drawn in code. |
 | Background | 1200 x 2800 | scaled to cover the screen | Opaque. Keep key detail inside the centre 1200 x 2133 so 9:16 phones crop safely. Soft blur, low contrast, nothing busy behind the board (the board sits between 10% and 90% of the height). |
 | Button (primary and secondary share one 9-slice, tinted) | 480 x 336 | 816 x 168 px (272 x 56 dp: card 320 dp minus 2 x 24 dp padding, `ResultPanelLayout`) | 9-slice, border 120 on all sides (shown as 60 px, so source is 2x). Check: 2 x 120 = 240 is less than the 336 height and 480 width. Neutral light base so it can be tinted Turmeric or Peacock blue |
 | Panel / card | 960 x 960 | up to 960 px wide (320 dp) | 9-slice, border 144 (shown 1:1, 48 dp). Check: 2 x 144 = 288 is less than 960. Card cream with a thin Plank mid edge and soft shadow |
 | HUD pill (counter) | 504 x 240 | 252 x 120 px (84 x 40 dp) | 9-slice, border 80 (shown as 40 px, so source is 2x). Check: 2 x 80 = 160 is less than the 240 height and 504 width |
-| Padlock | 256 x 280 | up to 142 x 156 px (0.55 tile at 259 px) | Brass, plain, no keyhole text; aspect 64 : 70 |
+| Padlock | 256 x 280 | up to 76 x 83 px (0.55 tile at 138 px) | Brass, plain, no keyhole text; aspect 64 : 70 |
 | Coin | 216 x 216 | 108 px (36 dp, `UiFeel.CoinDp`) | Brass disc with a plain embossed ring and a simple rupee-free centre (no symbols, no text) |
 | Star | 256 x 256 | 156 px (52 dp) | Filled Turmeric star with warm highlight. An empty version in Sandstone with a Plank mid edge, same size |
 | Icons (pause, sound, retry) | 128 x 128 each | 72 px (24 dp) | Roasted brown, simple, not in this issue's scope; listed for later |
