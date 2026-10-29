@@ -57,6 +57,11 @@ namespace Game.EditorTools
             bootstrap.Configure(levels, view, camera); // saved progress on: continue at the first unplayed level
             EditorUtility.SetDirty(bootstrap);
 
+            var tutorialObject = new GameObject("Tutorial");
+            var tutorial = tutorialObject.AddComponent<TutorialDirector>();
+            tutorial.Configure(bootstrap, input); // L1, L2, L11 first-play cues (issue #57)
+            EditorUtility.SetDirty(tutorial);
+
             var panelsObject = new GameObject("Result Panels");
             var panels = panelsObject.AddComponent<ResultPanels>();
             panels.Configure(view, bootstrap, camera);

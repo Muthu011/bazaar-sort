@@ -19,6 +19,8 @@ namespace Game.View
         [SerializeField] private BoardView _view;
 
         private Board _boundBoard;
+        private Board _gateBoard;
+        private IMoveGate _gate;
         private PointerGesture _gesture;
         private bool _tracking;
 
@@ -26,6 +28,17 @@ namespace Game.View
         public void Configure(BoardView view)
         {
             _view = view;
+        }
+
+        /// <summary>
+        /// Limits input on <paramref name="board"/> to what <paramref name="gate"/> allows (a tutorial step, issue #57);
+        /// null removes the limit. Applies now if that board is bound, or as soon as it is. Another board is never gated.
+        /// </summary>
+        public void SetGate(Board board, IMoveGate gate)
+        {
+            _gateBoard = gate == null ? null : board;
+            _gate = gate;
+            if (_gesture != null) _gesture.Input.Gate = GateFor(_boundBoard);
         }
 
         /// <summary>The gesture driver for the bound board, or null.</summary>
@@ -79,8 +92,10 @@ namespace Game.View
         {
             Cancel();
             _boundBoard = board;
-            _gesture = board == null ? null : new PointerGesture(new MoveInput(board), _view);
+            _gesture = board == null ? null : new PointerGesture(new MoveInput(board) { Gate = GateFor(board) }, _view);
         }
+
+        private IMoveGate GateFor(Board board) => board != null && board == _gateBoard ? _gate : null;
 
         private void Cancel()
         {

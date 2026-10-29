@@ -37,6 +37,26 @@ namespace Game.View
         private static Sprite _coin;
         private static Sprite _gear;
         private static Sprite _play;
+        private static Sprite _hand;
+        private static Sprite _arrow;
+
+        /// <summary>
+        /// Fingertip of <see cref="Hand"/> relative to the sprite's centre, as a fraction of its width (the hand points
+        /// up; place the sprite so this point sits on the target).
+        /// </summary>
+        public static readonly Vector2 HandTipOffset = new Vector2(-0.12f, 0.45f);
+
+        /// <summary>
+        /// A white pointing hand (index finger up, thumb to the left), one world unit across: the L1 tutorial pointer
+        /// (issue #57). Placeholder until approved art exists. Tip at <see cref="HandTipOffset"/>.
+        /// </summary>
+        public static Sprite Hand => _hand != null ? _hand : (_hand = CreateHand());
+
+        /// <summary>
+        /// A white arrow pointing down (shaft and head), one world unit across, tip at the bottom edge: the L2 hidden
+        /// layer cue (issue #57). Placeholder until approved art exists.
+        /// </summary>
+        public static Sprite ArrowDown => _arrow != null ? _arrow : (_arrow = CreateArrowDown());
 
         /// <summary>
         /// A soft white ellipse, twice as wide as tall, one world unit wide: the pick-up and flight shadow (tint it dark
@@ -245,6 +265,64 @@ namespace Game.View
                 float d = Mathf.Max(EdgeDistance(a, b, p), Mathf.Max(EdgeDistance(b, c, p), EdgeDistance(c, a, p)));
                 return Mathf.Clamp01(0.5f - d);
             });
+        }
+
+        private static Sprite CreateHand()
+        {
+            const float s = EffectSize;
+            // Fingertip sits at (0.38, 0.95) of the square: centre (0.5, 0.5) plus HandTipOffset.
+            var fingerTop = new Vector2(0.38f * s, 0.86f * s);
+            var fingerBottom = new Vector2(0.38f * s, 0.45f * s);
+            float finger = 0.09f * s;
+            var thumbA = new Vector2(0.2f * s, 0.42f * s);
+            var thumbB = new Vector2(0.3f * s, 0.3f * s);
+            float thumb = 0.08f * s;
+            var palmMin = new Vector2(0.3f * s, 0.06f * s);
+            var palmMax = new Vector2(0.78f * s, 0.5f * s);
+            float palmRadius = 0.12f * s;
+            return Build("PlaceholderHand", EffectSize, EffectSize, (x, y) =>
+            {
+                var p = new Vector2(x, y);
+                float d = Mathf.Min(Capsule(p, fingerBottom, fingerTop, finger), Capsule(p, thumbA, thumbB, thumb));
+                d = Mathf.Min(d, RoundedBox(p, palmMin, palmMax, palmRadius));
+                return Mathf.Clamp01(0.5f - d);
+            });
+        }
+
+        private static Sprite CreateArrowDown()
+        {
+            const float s = EffectSize;
+            var tip = new Vector2(0.5f * s, 0.02f * s);
+            var left = new Vector2(0.08f * s, 0.46f * s);
+            var right = new Vector2(0.92f * s, 0.46f * s);
+            var shaftMin = new Vector2(0.34f * s, 0.4f * s);
+            var shaftMax = new Vector2(0.66f * s, 0.98f * s);
+            return Build("PlaceholderArrowDown", EffectSize, EffectSize, (x, y) =>
+            {
+                var p = new Vector2(x, y);
+                // Clockwise corners for EdgeDistance: left, tip, right (seen with y up).
+                float head = Mathf.Max(EdgeDistance(left, right, p), Mathf.Max(EdgeDistance(right, tip, p), EdgeDistance(tip, left, p)));
+                float shaft = RoundedBox(p, shaftMin, shaftMax, 0.06f * s);
+                return Mathf.Clamp01(0.5f - Mathf.Min(head, shaft));
+            });
+        }
+
+        /// <summary>Signed distance from a capsule (segment <paramref name="a"/>-<paramref name="b"/>, radius <paramref name="r"/>).</summary>
+        private static float Capsule(Vector2 p, Vector2 a, Vector2 b, float r)
+        {
+            var ab = b - a;
+            float t = Mathf.Clamp01(Vector2.Dot(p - a, ab) / ab.sqrMagnitude);
+            return (p - (a + ab * t)).magnitude - r;
+        }
+
+        /// <summary>Signed distance from a rounded box spanning <paramref name="min"/>..<paramref name="max"/>.</summary>
+        private static float RoundedBox(Vector2 p, Vector2 min, Vector2 max, float r)
+        {
+            var centre = (min + max) * 0.5f;
+            var half = (max - min) * 0.5f - new Vector2(r, r);
+            var q = new Vector2(Mathf.Abs(p.x - centre.x) - half.x, Mathf.Abs(p.y - centre.y) - half.y);
+            var outside = new Vector2(Mathf.Max(q.x, 0f), Mathf.Max(q.y, 0f));
+            return outside.magnitude + Mathf.Min(Mathf.Max(q.x, q.y), 0f) - r;
         }
 
         /// <summary>Signed distance of <paramref name="p"/> from the edge <paramref name="from"/>-<paramref name="to"/> of a clockwise triangle (&gt; 0 outside).</summary>

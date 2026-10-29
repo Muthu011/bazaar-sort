@@ -88,6 +88,19 @@ namespace Game.View
     }
 
     /// <summary>
+    /// Narrows which moves the player may make right now, on top of the board's own rules (the L1 tutorial lets only
+    /// the shown move through, issue #57). Asked by <see cref="MoveInput"/>; never consulted by the board.
+    /// </summary>
+    public interface IMoveGate
+    {
+        /// <summary>True when the item at (<paramref name="shelf"/>, <paramref name="slot"/>) may be picked up.</summary>
+        bool AllowsPick(int shelf, int slot);
+
+        /// <summary>True when that item may be dropped on <paramref name="toShelf"/> (its own shelf is a cancel).</summary>
+        bool AllowsMove(int fromShelf, int fromSlot, int toShelf);
+    }
+
+    /// <summary>
     /// The tap-to-pick, tap-to-drop and drag state machine. Lives in the View/input layer because selection and drag
     /// are interaction state, not game rules (Core holds rules only). Pure C# with no UnityEngine calls, so it is Edit
     /// Mode tested. No rules of its own: whether a move is allowed is
@@ -108,6 +121,11 @@ namespace Game.View
     /// the release counts as a tap and gives the same shake. Dropping on another shelf tries the move; a refusal is
     /// Rejected (snap back with shake). Dropping on its own shelf (<see cref="MoveResult.SameShelf"/>, a cancel) or
     /// off the board returns home without a shake.
+    ///
+    /// With a <see cref="Gate"/> (a tutorial step), what the gate refuses is not tappable: picking a refused item is
+    /// Ignored (no selection, no shake, no drag), tapping a refused shelf with an item selected is Ignored and keeps the
+    /// selection, and dropping on a refused shelf returns home without a shake. Cancels (own shelf, off the board) are
+    /// never refused.
     /// </summary>
     public sealed class MoveInput
     {
@@ -122,6 +140,9 @@ namespace Game.View
         }
 
         public Board Board => _board;
+
+        /// <summary>Optional extra limit on moves (tutorial); null lets every move the board allows through.</summary>
+        public IMoveGate Gate { get; set; }
 
         /// <summary>True when an item is selected by tap (not while dragging).</summary>
         public bool HasSelection => _shelf >= 0 && !_dragging;
@@ -142,7 +163,7 @@ namespace Game.View
 
             if (!HasSelection)
             {
-                if (!HasItem(target)) return InputOutcome.Ignored;
+                if (!HasItem(target) || !GatePick(target.Shelf, target.Slot)) return InputOutcome.Ignored;
                 var verdict = _board.CanPick(target.Shelf, target.Slot);
                 if (verdict != MoveResult.Ok)
                 {
@@ -158,9 +179,14 @@ namespace Game.View
 
             if (target.Shelf == fromShelf)
             {
-                if (target.Slot != fromSlot && HasItem(target)) return Select(target.Shelf, target.Slot);
+                if (target.Slot != fromSlot && HasItem(target) && GatePick(target.Shelf, target.Slot))
+                {
+                    return Select(target.Shelf, target.Slot);
+                }
                 return Deselect();
             }
+
+            if (!GateMove(fromShelf, fromSlot, target.Shelf)) return InputOutcome.Ignored;
 
             Clear();
             return TryMoveTo(fromShelf, fromSlot, target.Shelf);
@@ -172,7 +198,7 @@ namespace Game.View
         /// </summary>
         public InputOutcome BeginDrag(BoardTarget target)
         {
-            if (_dragging || !HasItem(target)) return InputOutcome.Ignored;
+            if (_dragging || !HasItem(target) || !GatePick(target.Shelf, target.Slot)) return InputOutcome.Ignored;
             if (_board.CanPick(target.Shelf, target.Slot) != MoveResult.Ok) return InputOutcome.Ignored;
 
             _shelf = target.Shelf;
@@ -194,6 +220,7 @@ namespace Game.View
 
             var verdict = _board.CanMove(fromShelf, fromSlot, target.Shelf);
             if (verdict == MoveResult.SameShelf) return ReturnHome(fromShelf, fromSlot);
+            if (!GateMove(fromShelf, fromSlot, target.Shelf)) return ReturnHome(fromShelf, fromSlot);
             return TryMoveTo(fromShelf, fromSlot, target.Shelf);
         }
 
@@ -217,6 +244,11 @@ namespace Game.View
             if (target.Slot < 0 || target.Slot >= Shelf.SlotCount) return false;
             return _board.GetShelf(target.Shelf).GetFrontItem(target.Slot) != null;
         }
+
+        private bool GatePick(int shelf, int slot) => Gate == null || Gate.AllowsPick(shelf, slot);
+
+        private bool GateMove(int fromShelf, int fromSlot, int toShelf) =>
+            Gate == null || Gate.AllowsMove(fromShelf, fromSlot, toShelf);
 
         private InputOutcome Select(int shelf, int slot)
         {
