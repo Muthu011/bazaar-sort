@@ -53,3 +53,35 @@ Note: Unity modified ProjectSettings/ProjectSettings.asset during the PlayMode r
 
 RESULT: FAIL
 Top issues for the author: fix the full-suite timing of the 14-shelf locked analysis test (16.7 s vs 10 s limit).
+
+## Round 3 (HEAD feeb050)
+
+Scope: commits e9cc01c, 301c112, feeb050 since b7aedc3. All runs through Unity MCP `run_tests`/`get_test_job` plus `scripts/run-performance-tests.sh`; no sleep loops, every job well under 5 minutes. No code, test, threshold or level changed by QA.
+
+### Criteria
+
+| # | Check | Result | Evidence |
+|---|-------|--------|----------|
+| 1a | Full EditMode, category `!Performance` | MET | 507/507 passed, 61.9 s |
+| 1b | `Performance` alone | MET | exactly 1 test (`SolverPerformanceTests.Analyse_FourteenShelfLevelWithLocks_UnderTenSeconds`), passed, 1.72 s in editor (1.65 s analysis, 4099 A* states). So total 508 = 507 + 1 |
+| 1c | Full PlayMode | MET | 47/47 passed, 25.9 s |
+| 2 | Batch mode, run twice | MET | run 1: Passed, test time 1.895 s (analysis 1.86 s); run 2: Passed, 1.616 s (analysis 1.58 s). Both well under 10 s. Script printed result lines and no failure (the `exit=` echo was empty only because of a zsh PIPESTATUS quirk in my wrapper; the XML says Passed) |
+| 3 | LevelPackTests | MET | 44/44 passed, 10.9 s. `git diff origin/main --stat -- Assets/Levels` is empty (stored blocks unchanged) |
+| 4 | Diff review | MET, see below | |
+| 5 | L10 analysis time | NOTE | `Level_EstWinRateIsInItsBand(w1_l010.json)` took 6.84 s in the editor (the next slowest is l014 at 1.11 s, l009 0.62 s). Budget is 30 s, so about 4.4x headroom unfocused-editor; the author's near-30 s figure under throttling is a real risk only if the editor is throttled |
+| 6 | Console | MET | 0 errors, 0 warnings after all runs |
+
+### Diff review (b7aedc3..HEAD)
+- Not touched by the diff: SolverOptions defaults (30 s / 40M budget, 1000 plays, seed 20270112, play policy), difficulty bands, the 10 s limit in the test (only a `[Category("Performance")]` attribute and a comment were added). No `[Ignore]`, no loosened assertion.
+- SolverTests: diff is 36 insertions, 0 deletions. The new `DeadEndOracle_AgreesWithTheShortestSolutionSearch_AlongRandomPlays` (2 cases) compares `LivenessOracle.IsAlive` against a fresh, independent `ShortestSolver.Solve` at every step of random plays (asserts alive>0 and dead>0 so it is not vacuous). Nothing was removed or weakened.
+- Core: `Board.CanReceive(shelf)` is a pure rule (not locked and free front slot); `HasLegalMove` reuses it; `BoardCanReceiveTests` checks agreement with `CanMove` exhaustively over a played game. No interaction state in Core.
+- Threading: `PlaySimulatorThreadingTests` (1 vs several threads, locked and shipped level) pass and exercise both the sequential path and the new A*-thread-alongside-plays path. The winning line is published via a volatile field and only saves dead-end searches. Observed note: the "boards" counter varies between runs (1210994, 1210748, 1210414) because A* and the plays race on the shared budget, but all analysis results (minMoves 31, estWinRate 0.382, 382/1000) are identical every run.
+- Script `scripts/run-performance-tests.sh` safety: empty arg falls back to `$TMPDIR/bazaar-sort-perf` (safe). Arg equal to the repo path makes rsync source and destination the same directory (effectively a no-op; `.git` excluded). BUT there is no guard against an ancestor or other unrelated directory: `run-performance-tests.sh /` or `.../unity` (the parent of the repo) would run `rsync -a --delete` into it and delete everything else there. Also a relative arg is resolved from the caller's cwd. Not blocking (needs an explicit bad argument) but should be hardened.
+
+### Findings
+1. (Low, hardening) Script has no guard on the copy-dir argument: refuse empty/`/`/the repo/any ancestor of the repo, require the dir to be new or to contain a marker file created by the script before `--delete`.
+2. (Info) L10 is the slowest level at 6.84 s in the editor; watch it if the machine is loaded (budget 30 s).
+3. (Info) Unity rewrote `ProjectSettings/ProjectSettings.asset` during the runs; reverted with `git checkout --` before the commit.
+4. (Info) Performance test is not part of the editor suite (`!Performance`); CI/the author must run the batch script to cover the 10 s limit.
+
+RESULT: PASS
