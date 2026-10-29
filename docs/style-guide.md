@@ -14,7 +14,7 @@ The bullets below are the base rules. The sections after them add the World 1 lo
 
 ## World 1: Amma's Kitchen (look page, issue #24)
 
-Status: proposal for Muthu to react to with test art. Taste calls are listed in "Questions for Muthu" at the end of this section; the defaults below are used until he answers.
+Status: proposal for Muthu to react to with test art. Taste calls are listed in "Questions for Muthu" at the end of this section; the defaults below are used until Muthu answers.
 
 ### Mood
 - A warm Madurai home kitchen in the morning: limewashed cream wall, a plank shelf, brass and stainless steel catching a soft window light from the top left.
