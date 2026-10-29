@@ -292,21 +292,24 @@ namespace Game.Tests.EditMode
         [Test]
         public void HitTest_InGapBetweenRows_PicksNearestShelf()
         {
+            // Issue #40: 4 shelves now sit 2 per row, so the shelf below shelf 0 is shelf 2 (was shelf 1 in one column).
             var layout = BoardLayout.Compute(4, Shelf.SlotCount, new Rect(0, 0, 1080, 1920), BoardLayoutSettings.Default);
-            Assert.AreEqual(1, layout.Columns, "Precondition: one column.");
+            Assert.AreEqual(2, layout.Columns, "Precondition: two columns.");
+            int below = layout.Columns;
             float x = layout.GetFrontSlotRect(0, 1).center.x;
             float gapTop = layout.GetShelfRect(0).yMin;
-            float gapBottom = layout.GetShelfRect(1).yMax;
+            float gapBottom = layout.GetShelfRect(below).yMax;
             Assert.AreEqual(0, layout.HitTest(new Vector2(x, gapTop - 1f)).Shelf, "Just below shelf 0");
-            Assert.AreEqual(1, layout.HitTest(new Vector2(x, gapBottom + 1f)).Shelf, "Just above shelf 1");
+            Assert.AreEqual(below, layout.HitTest(new Vector2(x, gapBottom + 1f)).Shelf, "Just above shelf 2");
         }
 
         [Test]
-        public void FourShelves_On16By9_UseOneColumn()
+        public void FourShelves_On16By9_UseTwoColumns()
         {
+            // Issue #40: shelves fill the width 2 or 3 per row (was 1 column x 4 rows).
             var layout = BoardLayout.Compute(4, Shelf.SlotCount, new Rect(0, 0, 1080, 1920), BoardLayoutSettings.Default);
-            Assert.AreEqual(1, layout.Columns);
-            Assert.AreEqual(4, layout.Rows);
+            Assert.AreEqual(2, layout.Columns);
+            Assert.AreEqual(2, layout.Rows);
         }
 
         [Test]

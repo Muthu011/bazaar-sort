@@ -35,6 +35,12 @@ namespace Game.View
         /// <summary>Most shelf columns the layout will try.</summary>
         public int MaxColumns;
 
+        /// <summary>
+        /// Fewest shelf columns the layout will try (issue #40: portrait phones show 2 or 3 shelves per row, so the
+        /// shelves fill the width). Values below 1 count as 1; boards with fewer shelves than this use one row.
+        /// </summary>
+        public int MinColumns;
+
         public static BoardLayoutSettings Default => new BoardLayoutSettings
         {
             TopReserveFraction = 0.10f,
@@ -45,6 +51,7 @@ namespace Game.View
             ColumnGap = 0.25f,
             RowGap = 0.35f,
             MaxColumns = 3,
+            MinColumns = 2,
         };
     }
 
@@ -243,8 +250,9 @@ namespace Game.View
 
         /// <summary>
         /// Lays out <paramref name="shelfCount"/> shelves of <paramref name="slotCount"/> slots inside
-        /// <paramref name="safeArea"/>. Tries 1..<see cref="BoardLayoutSettings.MaxColumns"/> columns and keeps the
-        /// one with the largest tiles (fewer columns on a tie). Shelves fill rows top to bottom, left to right; a
+        /// <paramref name="safeArea"/>. Tries <see cref="BoardLayoutSettings.MinColumns"/> to
+        /// <see cref="BoardLayoutSettings.MaxColumns"/> columns and keeps the one with the largest tiles (fewer columns
+        /// on a tie). Shelves fill rows top to bottom, left to right; a
         /// short last row is centred. The grid is centred in the playfield.
         /// </summary>
         public static BoardLayout Compute(int shelfCount, int slotCount, Rect safeArea, BoardLayoutSettings settings)
@@ -273,10 +281,11 @@ namespace Game.View
             float shelfW = ShelfWidthInTiles(settings, slotCount);
             float shelfH = ShelfHeightInTiles(settings);
 
-            int bestColumns = 1;
-            float bestTile = -1f;
             int maxColumns = Math.Max(1, Math.Min(settings.MaxColumns, shelfCount));
-            for (int c = 1; c <= maxColumns; c++)
+            int minColumns = Math.Max(1, Math.Min(settings.MinColumns, maxColumns));
+            int bestColumns = minColumns;
+            float bestTile = -1f;
+            for (int c = minColumns; c <= maxColumns; c++)
             {
                 int r = (shelfCount + c - 1) / c;
                 float widthTiles = c * shelfW + (c - 1) * settings.ColumnGap;
