@@ -213,6 +213,8 @@ Per-object lines (main colour from the palette; use the hex in the prompt if the
 
 Prompt consistency check when images come back: same light direction, same camera angle, same scale of detail, same edge treatment. Regenerate rather than paint over when the angle or light is off.
 
+Illustration pack: in Slice 4 the art-director takes prompts and references for story art, characters, backgrounds, gameplay assets, icons (including E7 tutorial hand and E8 tutorial arrow) and screen mockups from `Art-Inbox/illustration-pack/illustration-prompts.md` and its `references/` folder. `Art-Inbox/` is git-ignored and holds reference material only, not approved art (Muthu, 2026-10-29).
+
 ### Logging approved art
 When Muthu makes or approves an image, append one row per file to `docs/art-provenance.csv` (columns: `file, source_tool, prompt_ref, edited_by, approved_by, date`). Example shape: `Assets/Art/Objects/world1/tumbler.png, <tool name and version>, docs/style-guide.md#prompts-for-the-10-objects (tumbler), <who edited by hand>, Muthu, <yyyy-mm-dd>`. Only tools listed in `docs/approved-dependencies.md` may be used. No rows are added in this issue.
 
