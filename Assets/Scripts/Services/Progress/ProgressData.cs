@@ -20,10 +20,17 @@ namespace Game.Services
         /// <summary>One entry per level won at least once, with its best star count.</summary>
         public List<LevelStars> levels = new List<LevelStars>();
 
+        /// <summary>
+        /// Tutorial keys completed at least once (issue #57), e.g. <c>match3</c>. Added without a version bump: a save
+        /// written before it has no such field and reads as "none completed".
+        /// </summary>
+        public List<string> tutorialsDone = new List<string>();
+
         public ProgressData Clone()
         {
             var copy = new ProgressData { version = version, highestUnlocked = highestUnlocked };
             foreach (var entry in levels) copy.levels.Add(new LevelStars { id = entry.id, stars = entry.stars });
+            copy.tutorialsDone.AddRange(tutorialsDone);
             return copy;
         }
     }
