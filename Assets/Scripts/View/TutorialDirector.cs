@@ -37,10 +37,14 @@ namespace Game.View
         /// <summary>Arrow width in tiles.</summary>
         internal const float ArrowTiles = 0.45f;
 
-        /// <summary>Pill text size in tiles (TextMesh character size, as BoardView sizes its labels).</summary>
-        private const float TextTiles = 0.4f;
+        /// <summary>Text size as a fraction of the pill's height (TextMesh character size, as BoardView sizes its labels).</summary>
+        private const float TextInPill = 0.8f;
 
+        /// <summary>Pill height in tiles, at most.</summary>
         private const float PillHeightTiles = 0.5f;
+
+        /// <summary>The "Match 3!" pill is at most this much of the top bar's height (BoardView.StatusMaxHeightInReserve).</summary>
+        private const float PillMaxHeightInReserve = 0.4f;
 
         // docs/style-guide.md: Card cream pill, Roasted brown text; Turmeric (the World 1 accent) for the arrow.
         private static readonly Color32 CardCream = new Color32(0xFF, 0xF4, 0xDC, 0xFF);
@@ -60,6 +64,7 @@ namespace Game.View
         private SpriteRenderer _arrow;
         private SpriteRenderer _pill;
         private TextMesh _text;
+        private MeshRenderer _textRenderer;
 
         /// <summary>The guide for the current level, or null (no tutorial, or skipped because it was done before).</summary>
         public TutorialGuide Guide => _guide;
@@ -107,9 +112,9 @@ namespace Game.View
             _text.fontStyle = FontStyle.Bold;
             Color text = RoastedBrown;
             _text.color = QualitySettings.activeColorSpace == ColorSpace.Linear ? text.linear : text;
-            var textRenderer = textObject.GetComponent<MeshRenderer>();
-            textRenderer.sharedMaterial = font.material;
-            textRenderer.sortingOrder = TextOrder;
+            _textRenderer = textObject.GetComponent<MeshRenderer>();
+            _textRenderer.sharedMaterial = font.material;
+            _textRenderer.sortingOrder = TextOrder;
 
             HideCue();
         }
@@ -192,7 +197,13 @@ namespace Game.View
 
         // ---- Drawing ----
 
-        private void Update()
+        private void Update() => Advance(Time.deltaTime);
+
+        /// <summary>
+        /// Moves the cue on by <paramref name="seconds"/> and redraws it. Called from Update; capture tools call it by
+        /// hand with game time frozen so frames are exact.
+        /// </summary>
+        public void Advance(float seconds)
         {
             if (_guide == null || !_guide.IsActive)
             {
@@ -208,7 +219,7 @@ namespace Game.View
                 return;
             }
 
-            _elapsed += Time.deltaTime;
+            _elapsed += seconds;
             switch (_guide.Cue)
             {
                 case TutorialCue.HandPointer:
@@ -245,9 +256,14 @@ namespace Game.View
             _hand.gameObject.SetActive(true);
             _arrow.gameObject.SetActive(false);
 
-            var shelfRect = layout.GetShelfRect(move.ToShelf);
-            ShowPill(new Vector2(shelfRect.center.x, shelfRect.yMax + layout.TileSize * PillHeightTiles * 0.75f),
-                layout.TileSize * 2f, layout.TileSize);
+            // "Match 3!" sits where the board's status line goes: the lower part of the top bar, clear of the HUD's
+            // level number (BoardView.StatusCentreInReserve). The status line is empty while the level is in play.
+            var playfield = layout.Playfield;
+            float reserve = Mathf.Max(0f, _bootstrap.View.SafeArea.yMax - playfield.yMax);
+            float height = Mathf.Max(layout.TileSize * 0.3f,
+                Mathf.Min(layout.TileSize * PillHeightTiles, reserve * PillMaxHeightInReserve));
+            ShowPill(new Vector2(playfield.center.x, playfield.yMax + reserve * BoardView.StatusCentreInReserve),
+                height * 4f, height);
             if (_text.text != Match3Text) _text.text = Match3Text;
         }
 
@@ -279,19 +295,24 @@ namespace Game.View
             var rect = layout.GetShelfRect(shelf);
             _hand.gameObject.SetActive(false);
             _arrow.gameObject.SetActive(false);
-            ShowPill(rect.center, rect.width * 0.92f, layout.TileSize);
+            ShowPill(rect.center, rect.width * 0.92f, layout.TileSize * PillHeightTiles);
         }
 
-        private void ShowPill(Vector2 centre, float width, float tile)
+        private void ShowPill(Vector2 centre, float width, float height)
         {
-            float height = tile * PillHeightTiles;
             _pill.transform.position = new Vector3(centre.x / BoardView.PixelsPerUnit, centre.y / BoardView.PixelsPerUnit, 0f);
             _pill.size = new Vector2(width, height) / BoardView.PixelsPerUnit;
             _pill.gameObject.SetActive(true);
 
             _text.transform.position = _pill.transform.position;
-            _text.characterSize = tile * TextTiles / BoardView.PixelsPerUnit * 10f / FontSize;
             _text.gameObject.SetActive(true);
+
+            // Text fills TextInPill of the pill's height, shrunk if needed so the line stays inside the pill.
+            float size = height * TextInPill / BoardView.PixelsPerUnit * 10f / FontSize;
+            _text.characterSize = size;
+            float textWidth = _textRenderer.bounds.size.x * BoardView.PixelsPerUnit;
+            float room = width * 0.9f;
+            if (textWidth > room && textWidth > 0f) _text.characterSize = size * room / textWidth;
         }
 
         private static void PlaceSprite(SpriteRenderer sprite, Vector2 centrePixels, float widthPixels)
