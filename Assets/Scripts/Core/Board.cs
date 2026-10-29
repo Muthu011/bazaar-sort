@@ -203,10 +203,22 @@ namespace Game.Core
                 if (_shelves[from].IsLocked || _shelves[from].IsFrontEmpty) continue;
                 for (int to = 0; to < _shelves.Length; to++)
                 {
-                    if (to != from && !_shelves[to].IsLocked && _shelves[to].HasFreeFrontSlot) return true;
+                    if (to != from && CanReceive(to)) return true;
                 }
             }
             return false;
+        }
+
+        /// <summary>
+        /// True when shelf <paramref name="shelf"/> may take a moved item: it is not locked and has a free front slot.
+        /// These are the target checks of <see cref="CanMove"/>, so <c>CanMove(from, slot, to)</c> is
+        /// <see cref="MoveResult.Ok"/> exactly when <c>CanPick(from, slot)</c> is Ok, <c>from != to</c> and
+        /// <c>CanReceive(to)</c>. Search tools use this to test each target once per board instead of once per item.
+        /// </summary>
+        public bool CanReceive(int shelf)
+        {
+            var target = _shelves[shelf];
+            return !target.IsLocked && target.HasFreeFrontSlot;
         }
 
         /// <summary>
@@ -245,7 +257,7 @@ namespace Game.Core
             if (fromShelf == toShelf) return MoveResult.SameShelf;
             if (_shelves[toShelf].IsLocked) return MoveResult.TargetLocked;
             if (!_shelves[toShelf].HasFreeFrontSlot) return MoveResult.TargetFull;
-            return MoveResult.Ok;
+            return MoveResult.Ok; // keep in step with CanReceive
         }
 
         /// <inheritdoc cref="TryMove(int,int,int,out MoveResult)"/>
