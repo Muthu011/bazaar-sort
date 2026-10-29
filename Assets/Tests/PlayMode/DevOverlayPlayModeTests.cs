@@ -181,8 +181,8 @@ namespace Game.Tests.PlayMode
         public IEnumerator LevelSelect_ShowsSavedStars_AndResetEmptiesTheSave()
         {
             var ids = _bootstrap.LevelIds;
-            ProgressRules.RecordWin(ids, _progress, 0);
-            ProgressRules.RecordWin(ids, _progress, 1);
+            ProgressRules.RecordWin(ids, _progress, 0, ProgressRules.MaxStars);
+            ProgressRules.RecordWin(ids, _progress, 1, ProgressRules.MaxStars);
             yield return null;
             yield return null;
             // Start may already have run before the save was seeded (continue is covered in ProgressPlayModeTests).
