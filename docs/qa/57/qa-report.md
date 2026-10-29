@@ -46,4 +46,23 @@ Branch `task/57-tutorial-l1-l2-l11`, 7 commits on top of main. Checked 2026-10-2
 3. Measure frame time in the Game scene on L1 with the tutorial and note the build size, or have Muthu confirm a device check.
 4. Confirm the "Level 1" title on L2 and L11.
 
-RESULT: FAIL
+Round 1 result: FAIL (see Round 2 below).
+
+## Round 2 (commits b7cd1ec, 9bcbb47, 6c22ae5)
+
+| Check | Result | Evidence |
+| --- | --- | --- |
+| Edit Mode | PASS | 731/731. |
+| Play Mode | PASS | 79/79 in two full runs (76 plus 3 new tests from TutorialGameScenePlayModeTests and TutorialPlayModeTests). The ResultPanels flake did not recur. |
+| Console | PASS | Cleared, force refresh with compile, both suites run: 0 errors, 0 warnings. |
+| L11 pill off the items | FIXED | l11_locked_line_720x1600.png: the pill sits at the top edge of the locked shelf, left of the padlock, and all three front items (I, S, M) are fully readable. A Play Mode test now enforces the placement. The pill touches the shelf edge but covers no item. |
+| "Level 1" title | FIXED | The retaken captures read "Level 11" (L11) and "Level 2" (L2), and Game-scene tests check the HUD title. It was the capture tool, as the author said. |
+| L1 hand | FIXED | l1_hand_on_item_720x1600.png: the fingertip is now below the T and the letter is readable. |
+| Frame time | PASS with a thin margin | The new [#57 frame] test reports PlayerLoop mean 2.06 ms, p95 2.85 ms, max 15.44 ms with the L1 tutorial active. Max is under 16.6 ms but only by 1.2 ms, in the editor and not on a device. A device check is still wanted. |
+| Build size | NOT MEASURED | No baseline and no build. No new assets or packages, only code and a rebuilt scene. Noted, not a blocker. |
+
+Flake evidence: round 1 failed once in `WinLastLevelByInput_ShowsMoreLevelsSoon_ThenReplayLoadsW1L001`. That test then passed on its own, and 5 later full runs (two by me in round 2, the rest earlier) had no failure. I did not run it on origin/main, so I cannot show it is not caused by this branch. The test code is unchanged and the failure was "Expected 0, was 4" on the replay index, in a test that does not touch the tutorial. I judge it a timing flake while the editor was unfocused and I do not block on it, but it stays on record for the author or Muthu to watch.
+
+Remaining notes, none blocking: the placeholder hand and arrow art is not final; there is no Skip button (auto-skip after first completion); the recordings are in the repo and not yet in a PR.
+
+RESULT: PASS
