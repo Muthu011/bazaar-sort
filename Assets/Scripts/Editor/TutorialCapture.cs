@@ -52,6 +52,16 @@ namespace Game.EditorTools
                     rig.Step(0.35f);
                     written.Add(rig.Save(Path.Combine(outputDir, "l1_hand_on_item_720x1600.png")));
                 }
+                using (var rig = new Rig(720, 1600, "w1_l002"))
+                {
+                    rig.Step(0.25f);
+                    written.Add(rig.Save(Path.Combine(outputDir, "l2_layer_arrow_720x1600.png")));
+                }
+                using (var rig = new Rig(720, 1600, "w1_l011"))
+                {
+                    rig.Step(0.1f);
+                    written.Add(rig.Save(Path.Combine(outputDir, "l11_locked_line_720x1600.png")));
+                }
 
                 // L1 sequence: two hand loops, the guided move and its clear, then free play (no cue).
                 string l1 = Path.Combine(outputDir, "l1_frames");
@@ -96,7 +106,7 @@ namespace Game.EditorTools
             private readonly TutorialDirector _tutorial;
             private readonly RenderTexture _target;
             private readonly Camera _camera;
-            private readonly TextAsset _level;
+            private readonly TextAsset[] _levels;
             private readonly List<GameObject> _objects = new List<GameObject>();
             private readonly int _width;
             private readonly int _height;
@@ -115,14 +125,25 @@ namespace Game.EditorTools
                 var input = viewObject.AddComponent<BoardInput>();
                 input.Configure(View);
 
-                _level = new TextAsset(File.ReadAllText($"Assets/Levels/World1/{levelName}.json")) { name = levelName };
+                // Every level file in play order, as the game's LevelList holds them, so the HUD shows the real
+                // level number (QA round 1: a one-level list always read "Level 1").
+                var paths = LevelListSync.FindLevelPaths();
+                _levels = new TextAsset[paths.Length];
+                int index = -1;
+                for (int i = 0; i < paths.Length; i++)
+                {
+                    string name = Path.GetFileNameWithoutExtension(paths[i]);
+                    _levels[i] = new TextAsset(File.ReadAllText(paths[i])) { name = name };
+                    if (name == levelName) index = i;
+                }
+                if (index < 0) throw new ArgumentException("No level named " + levelName, nameof(levelName));
                 var bootstrap = viewObject.AddComponent<LevelBootstrap>();
-                bootstrap.Configure(new[] { _level }, View, _camera);
+                bootstrap.Configure(_levels, View, _camera);
                 bootstrap.Progress = new ProgressService(new FakeProgressStore()); // fresh save: the tutorial runs
 
                 _tutorial = Make("Capture Tutorial").AddComponent<TutorialDirector>();
                 _tutorial.Configure(bootstrap, input);
-                bootstrap.LoadLevel(0);
+                bootstrap.LoadLevel(index);
                 var safe = new Rect(0, 0, width, height);
                 View.Relayout(safe);
 
@@ -184,7 +205,7 @@ namespace Game.EditorTools
             {
                 _camera.targetTexture = null;
                 foreach (var go in _objects) Object.DestroyImmediate(go);
-                Object.DestroyImmediate(_level);
+                foreach (var level in _levels) Object.DestroyImmediate(level);
                 _target.Release();
                 Object.DestroyImmediate(_target);
             }
