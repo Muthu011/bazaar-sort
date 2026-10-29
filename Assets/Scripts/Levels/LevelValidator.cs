@@ -25,11 +25,14 @@ namespace Game.Levels
     /// empty: the board moves the first non-empty layer behind it forward when it is built, so that layer is the
     /// real starting front row. Triples deeper in hidden layers are fine; they clear when revealed. Locked shelves
     /// follow the same rule: a starting triple there would clear the moment the shelf opens.</item>
+    /// <item><c>tutorial</c> is null or a known key (<see cref="TutorialKeys"/>), and fits the board: <c>layers</c> needs a
+    /// hidden layer on an open shelf, <c>locked</c> needs a locked shelf.</item>
     /// </list>
     ///
     /// "At start" means the board as <see cref="Board"/> builds it, i.e. after empty front rows are filled from behind.
-    /// Not checked yet, because the board doesn't build them: <c>wrapped</c> positions, <c>role</c>/<c>tutorial</c>
-    /// values, and tray sets.
+    /// Not checked yet, because the board doesn't build them: <c>wrapped</c> positions, <c>role</c> values and tray
+    /// sets. Whether a <c>match3</c> level has a one-move triple is not checked either: the tutorial guide copes without
+    /// one (it starts complete).
     /// </summary>
     public static class LevelValidator
     {
@@ -102,6 +105,7 @@ namespace Game.Levels
             }
 
             CheckLocksCanOpen(levelId, level.Shelves, errors);
+            CheckTutorial(levelId, level, errors);
 
             // Objects used by Set Trays are exempt from the multiple-of-3 rule; the schema says they must match their
             // tray sets exactly instead. Trays aren't built yet, so that tray-specific count is not checked here: tray
@@ -257,6 +261,37 @@ namespace Game.Levels
             }
 
             return empty;
+        }
+
+        /// <summary>Checks the <c>tutorial</c> key and that the rule it teaches is on the board.</summary>
+        private static void CheckTutorial(string levelId, LevelData level, List<LevelError> errors)
+        {
+            if (!TutorialKeys.TryParse(level.Tutorial, out var kind))
+            {
+                errors.Add(new LevelError(LevelErrorCode.UnknownTutorial, levelId,
+                    $"unknown tutorial \"{level.Tutorial}\"; expected null, match3, layers, locked, undo or extra_slot"));
+                return;
+            }
+
+            bool hasLocked = false;
+            bool hasOpenHiddenLayer = false;
+            foreach (var shelf in level.Shelves)
+            {
+                if (shelf == null) continue;
+                if (IsLocked(shelf)) hasLocked = true;
+                else if (shelf.Layers != null && shelf.Layers.Count > 1) hasOpenHiddenLayer = true;
+            }
+
+            if (kind == TutorialKind.Layers && !hasOpenHiddenLayer)
+            {
+                errors.Add(new LevelError(LevelErrorCode.TutorialDoesNotFit, levelId,
+                    "tutorial \"layers\" needs a hidden layer on a shelf that is not locked"));
+            }
+            else if (kind == TutorialKind.Locked && !hasLocked)
+            {
+                errors.Add(new LevelError(LevelErrorCode.TutorialDoesNotFit, levelId,
+                    "tutorial \"locked\" needs a locked shelf"));
+            }
         }
 
         private static bool IsLocked(ShelfData shelf) => shelf != null && shelf.Kind == ShelfKinds.Locked;

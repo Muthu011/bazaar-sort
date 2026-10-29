@@ -74,6 +74,26 @@ namespace Game.Services
             Changed?.Invoke();
         }
 
+        public bool IsTutorialDone(string tutorialKey)
+        {
+            EnsureLoaded();
+            if (string.IsNullOrEmpty(tutorialKey)) return false;
+            foreach (var key in _data.tutorialsDone)
+            {
+                if (string.Equals(key, tutorialKey, StringComparison.Ordinal)) return true;
+            }
+            return false;
+        }
+
+        public void MarkTutorialDone(string tutorialKey)
+        {
+            if (string.IsNullOrEmpty(tutorialKey)) throw new ArgumentException("A tutorial key is required.", nameof(tutorialKey));
+            if (IsTutorialDone(tutorialKey)) return;
+            _data.tutorialsDone.Add(tutorialKey);
+            Save();
+            Changed?.Invoke();
+        }
+
         public void Reset()
         {
             EnsureLoaded();

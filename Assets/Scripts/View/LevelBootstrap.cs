@@ -32,6 +32,7 @@ namespace Game.View
         private IProgressService _progress;
         private string[] _ids;
         private Board _board;
+        private LevelData _level;
         private int _current = -1;
         private bool _awaitingReplay;
         private Rect _lastSafeArea;
@@ -57,6 +58,9 @@ namespace Game.View
 
         /// <summary>True when a level follows the current one; false on the last level (or with no levels).</summary>
         public bool HasNext => LevelCount > 0 && LevelSequence.HasNext(_current, LevelCount);
+
+        /// <summary>Parsed data of the level being played (tutorial key, limits, ...), or null before the first load.</summary>
+        public LevelData CurrentLevel => _level;
 
         /// <summary>Name of the level asset being played, or null.</summary>
         public string CurrentLevelName => _current < 0 ? null : Levels[_current].name;
@@ -166,6 +170,7 @@ namespace Game.View
 
             Unwatch();
             _board = result.Board;
+            _level = result.Level;
             _board.Won += OnWon;
             _current = index;
             _awaitingReplay = false;

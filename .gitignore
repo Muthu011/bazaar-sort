@@ -15,3 +15,5 @@
 /data/exports/
 STOP
 .env*
+# Raw capture frames; only the GIFs and screenshots made from them are kept
+docs/qa/*/frames/

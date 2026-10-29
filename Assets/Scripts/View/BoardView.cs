@@ -119,6 +119,7 @@ namespace Game.View
         private Camera _camera;
         private BoardLayoutSettings _settings;
         private BoardLayout _layout;
+        private Rect _safeArea;
         private ShelfVisual[] _shelves;
         private TextMesh _status;
         private Font _font;
@@ -173,6 +174,9 @@ namespace Game.View
 
         /// <summary>The current layout, or null when unbound.</summary>
         public BoardLayout Layout => _layout;
+
+        /// <summary>The safe area (pixels) of the current layout; the top bar is between it and the playfield.</summary>
+        public Rect SafeArea => _safeArea;
 
         /// <summary>True while any shelf is playing a clear or reveal.</summary>
         public bool IsAnimating => _animatingShelves > 0;
@@ -289,6 +293,7 @@ namespace Game.View
             _camera.backgroundColor = BackgroundColor;
 
             CompleteAnimations();
+            _safeArea = safeArea;
             _layout = BoardLayout.Compute(_board.ShelfCount, Shelf.SlotCount, safeArea, _settings, ScreenDensity.Current);
             float labelScale = _layout.TileSize * LabelHeightInTile / PixelsPerUnit * 10f / LabelFontSize;
             float padlockWidth = _layout.TileSize * PadlockWidthTiles;
