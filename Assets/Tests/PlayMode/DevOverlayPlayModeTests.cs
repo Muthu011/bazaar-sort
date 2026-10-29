@@ -231,6 +231,60 @@ namespace Game.Tests.PlayMode
             }
         }
 
+        // ---- Fps and frame-time readout (issue #40: development builds only, right of the top bar) ----
+
+        [UnityTest]
+        public IEnumerator FpsReadout_IsBuiltInDevelopmentBuilds_AtTheRightOfTheTopBar()
+        {
+            yield return null;
+            yield return null;
+            Assert.IsTrue(_overlay.FpsEnabled, "The editor counts as a development build.");
+            Assert.IsNotNull(_overlay.FpsText, "Fps line built.");
+            Assert.IsNotNull(_overlay.WorstFrameText, "Frame-time line built.");
+
+            const float density = 3f;
+            var target = new RenderTexture(1080, 2400, 24);
+            try
+            {
+                _camera.targetTexture = target;
+                var safe = new Rect(0, 63, 1080, 2400 - 63 - 110);
+                _view.Bind(_view.Board, _camera, safe, BoardLayoutSettings.Default);
+                _overlay.Layout(safe, density);
+                Canvas.ForceUpdateCanvases();
+                var playfield = _view.Layout.Playfield;
+                foreach (var label in new[] { _overlay.FpsText, _overlay.WorstFrameText })
+                {
+                    var rect = ScreenRect(label.rectTransform);
+                    Assert.GreaterOrEqual(rect.yMin, playfield.yMax - 0.5f, $"{label.name} {rect} is in the top bar.");
+                    Assert.LessOrEqual(rect.yMax, safe.yMax + 0.5f, $"{label.name} is below the notch.");
+                    Assert.Greater(rect.center.x, safe.center.x, $"{label.name} is on the right.");
+                }
+            }
+            finally
+            {
+                _camera.targetTexture = null;
+                target.Release();
+                Object.Destroy(target);
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator FpsReadout_IsNotBuilt_WhenTheGuardSaysRelease()
+        {
+            yield return null;
+            Object.DestroyImmediate(_overlayObject);
+            _overlayObject = new GameObject("Dev Overlay (fps off)");
+            var overlay = _overlayObject.AddComponent<DevOverlay>();
+            overlay.FpsEnabled = DevBuild.IsFpsReadoutEnabled(false);
+            overlay.Configure(_bootstrap, _camera);
+            overlay.Build();
+            Assert.IsFalse(overlay.FpsEnabled);
+            Assert.IsNull(overlay.FpsText, "No fps text when the guard is off.");
+            Assert.IsNull(overlay.WorstFrameText, "No frame-time text when the guard is off.");
+            yield return null; // Update runs without the readout
+            Assert.IsNull(GameObject.Find("Dev Fps"), "No fps object in the scene.");
+        }
+
         // ---- Release gating ----
 
         [UnityTest]
@@ -242,6 +296,8 @@ namespace Game.Tests.PlayMode
 
             Assert.IsNull(DevOverlay.TryInstall(false), "Release: nothing is made.");
             Assert.IsNull(Object.FindAnyObjectByType<DevOverlay>(), "No overlay in the scene.");
+            Assert.IsNull(GameObject.Find("Dev Fps"), "Release: no fps or frame-time text anywhere.");
+            Assert.IsNull(GameObject.Find("Dev Worst Frame"));
 
             var installed = DevOverlay.TryInstall(true);
             Assert.IsNotNull(installed, "Development build: the overlay is added for the scene's bootstrap.");

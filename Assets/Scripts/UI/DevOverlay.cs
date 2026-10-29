@@ -7,7 +7,8 @@ using UnityEngine.UI;
 namespace Game.UI
 {
     /// <summary>
-    /// Development-build tools over the board: the level select and an fps readout in the bottom reserve. A "Levels"
+    /// Development-build tools over the board: the level select and an fps and worst-frame readout at the right of the
+    /// top bar (issue #40). A "Levels"
     /// button in the top HUD reserve opens a card with one cell per level in the <see cref="LevelBootstrap"/> list
     /// (every level in <see cref="LevelList"/>, so it grows as level files are added), each showing its number, saved
     /// stars and state (<see cref="DevLevelCell"/>), plus Reset progress and Close. Tapping a cell loads that level,
@@ -64,6 +65,7 @@ namespace Game.UI
         private FpsSampler _sampler = new FpsSampler(FpsSampler.DefaultWindowSeconds);
         private IProgressService _subscribedProgress;
         private bool _built;
+        private bool _fpsEnabled;
         private bool _trackScreen = true;
         private Rect _lastSafeArea;
         private int _lastWidth;
@@ -120,6 +122,7 @@ namespace Game.UI
         private void Awake()
         {
             if (!DevBuild.IsLevelSelectEnabled(Debug.isDebugBuild)) Destroy(gameObject);
+            _fpsEnabled = DevBuild.IsFpsReadoutEnabled(Debug.isDebugBuild);
         }
 
         private void OnEnable() => Subscribe();
@@ -140,7 +143,7 @@ namespace Game.UI
         {
             if (!_built) return;
 
-            if (_sampler.AddFrame(Time.unscaledDeltaTime))
+            if (_fps != null && _sampler.AddFrame(Time.unscaledDeltaTime))
             {
                 _fps.text = DevFpsLabels.Fps(_sampler.Fps);
                 _worst.text = DevFpsLabels.WorstMs(_sampler.WorstFrameMs);
@@ -237,15 +240,18 @@ namespace Game.UI
                 rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0.5f);
             }
 
-            _fps = UiParts.Text(_safeArea, "Dev Fps", font, DevFpsLabels.Fps(0), DevLevelSelectLayout.FpsFontDp, FpsGood,
-                TextAnchor.MiddleLeft);
-            _worst = UiParts.Text(_safeArea, "Dev Worst Frame", font, DevFpsLabels.WorstMs(0), DevLevelSelectLayout.FpsFontDp,
-                FpsGood, TextAnchor.MiddleLeft);
-            foreach (var label in new[] { _fps, _worst })
+            // Fps and frame-time text: development builds only (DevBuild.IsFpsReadoutEnabled), right of the top bar.
+            if (_fpsEnabled)
             {
-                var rect = label.rectTransform;
-                rect.anchorMin = rect.anchorMax = new Vector2(0f, 0f);
-                rect.pivot = new Vector2(0f, 0.5f);
+                _fps = UiParts.Text(_safeArea, "Dev Fps", font, DevFpsLabels.Fps(0), DevLevelSelectLayout.FpsFontDp, FpsGood,
+                    TextAnchor.MiddleRight);
+                _worst = UiParts.Text(_safeArea, "Dev Worst Frame", font, DevFpsLabels.WorstMs(0), DevLevelSelectLayout.FpsFontDp,
+                    FpsGood, TextAnchor.MiddleRight);
+                foreach (var label in new[] { _fps, _worst })
+                {
+                    var rect = label.rectTransform;
+                    rect.anchorMin = rect.anchorMax = new Vector2(1f, 1f);
+                }
             }
 
             _built = true;
@@ -312,12 +318,13 @@ namespace Game.UI
             close.sizeDelta = m.Action;
             close.anchoredPosition = m.ActionCentre(1);
 
-            float y = m.FpsCentreFromBottom;
-            float x = DevLevelSelectLayout.SideMarginDp;
-            _fps.rectTransform.sizeDelta = new Vector2(72f, DevLevelSelectLayout.FpsHeightDp);
-            _fps.rectTransform.anchoredPosition = new Vector2(x, y);
-            _worst.rectTransform.sizeDelta = new Vector2(110f, DevLevelSelectLayout.FpsHeightDp);
-            _worst.rectTransform.anchoredPosition = new Vector2(x + 76f, y);
+            if (_fps != null)
+            {
+                _fps.rectTransform.sizeDelta = m.FpsLine;
+                _fps.rectTransform.anchoredPosition = m.FpsCentre;
+                _worst.rectTransform.sizeDelta = m.FpsLine;
+                _worst.rectTransform.anchoredPosition = m.WorstCentre;
+            }
         }
 
         // ---- Open, choose, reset ----
@@ -424,6 +431,22 @@ namespace Game.UI
             return n;
         }
         internal RectTransform Card => _card;
+
+        /// <summary>The fps line, or null when the readout is off (release builds never build it).</summary>
+        internal Text FpsText => _fps;
+
+        /// <summary>The worst-frame line, or null when the readout is off.</summary>
+        internal Text WorstFrameText => _worst;
+
+        /// <summary>
+        /// Whether <see cref="Build"/> makes the fps readout; defaults to <see cref="DevBuild.IsFpsReadoutEnabled"/> for
+        /// <c>Debug.isDebugBuild</c>. Set before Build (tests check the release case).
+        /// </summary>
+        public bool FpsEnabled
+        {
+            get => _fpsEnabled;
+            set { if (!_built) _fpsEnabled = value; }
+        }
         internal Canvas Canvas => _canvas;
 
         // ---- Building blocks ----
