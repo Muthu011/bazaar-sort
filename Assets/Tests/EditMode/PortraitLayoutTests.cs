@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using Game.Core;
+using Game.Levels;
 using Game.View;
 using NUnit.Framework;
 using UnityEditor;
@@ -9,9 +10,10 @@ namespace Game.Tests.EditMode
 {
     /// <summary>
     /// Issue #40, the portrait phone layout: on 1080x2400 (20:9), 1080x1920 (16:9) and 720x1600, with and without
-    /// simulated notch and gesture-bar insets, the board sits in the middle band of the safe area, 2 or 3 shelves per
-    /// row filling the width, and item touch areas keep 48 dp (levels 1 to 20: up to 8 shelves) and the 44 dp floor
-    /// (9 to 14 shelves). Also: the player settings are portrait only.
+    /// simulated cutout and gesture-bar insets, the board sits in the middle band of the safe area, the column count
+    /// (1, 2 or 3) is the one that gives the biggest items, and item touch areas keep 48 dp (levels 1 to 20: up to 8
+    /// shelves) and the 44 dp floor (9 to 12 shelves; 12 is the cap for the whole game, <see cref="LevelValidator.MaxShelves"/>).
+    /// Also: the player settings are portrait only.
     /// </summary>
     public class PortraitLayoutTests
     {
@@ -42,18 +44,22 @@ namespace Game.Tests.EditMode
 
         /// <summary>
         /// The three Game view presets. Insets: 20:9 phones have a camera cutout (110 px at 3x, 74 px at 2x, about 37 dp)
-        /// and a gesture bar (63 px / 42 px, 21 dp). 16:9 phones have no cutout and the game starts full screen
-        /// (androidStartInFullscreen hides the status bar; on-screen buttons sit outside the window), so their safe area
-        /// is the whole screen.
+        /// and a gesture bar (63 px / 42 px, 21 dp). 16:9 phones usually have no cutout and the game starts full screen,
+        /// but the strictest cases are kept too: a 24 dp top cutout, and a 24 dp cutout plus a 21 dp gesture bar.
         /// </summary>
         public static IEnumerable<Phone> Phones()
         {
             yield return new Phone("1080x2400 @3", 1080, 2400, 3f, Vector4.zero);
             yield return new Phone("1080x2400 @3 notch+gesture", 1080, 2400, 3f, new Vector4(0, 63, 0, 110));
             yield return new Phone("1080x1920 @3", 1080, 1920, 3f, Vector4.zero);
+            yield return new Phone("1080x1920 @3 24dp cutout", 1080, 1920, 3f, new Vector4(0, 0, 0, 72));
+            yield return new Phone("1080x1920 @3 24dp cutout+gesture", 1080, 1920, 3f, new Vector4(0, 63, 0, 72));
             yield return new Phone("720x1600 @2", 720, 1600, 2f, Vector4.zero);
             yield return new Phone("720x1600 @2 notch+gesture", 720, 1600, 2f, new Vector4(0, 42, 0, 74));
         }
+
+        private const int MinShelves = 4;
+        private static int MaxShelves => LevelValidator.MaxShelves;
 
         private static BoardLayout Layout(Phone phone, int shelves)
         {
@@ -65,7 +71,7 @@ namespace Game.Tests.EditMode
         {
             var safe = phone.SafeArea;
             var settings = BoardLayoutSettings.Default;
-            for (int count = 4; count <= 14; count++)
+            for (int count = MinShelves; count <= MaxShelves; count++)
             {
                 var layout = Layout(phone, count);
                 var band = layout.Playfield;
@@ -90,15 +96,47 @@ namespace Game.Tests.EditMode
             }
         }
 
-        [TestCaseSource(nameof(Phones))]
-        public void Shelves_TwoOrThreePerRow_AndFillTheWidth(Phone phone)
+        /// <summary>Tile side for exactly <paramref name="columns"/> columns, from the layout's own proportions.</summary>
+        private static float TileFor(Rect band, int shelves, int columns)
         {
-            for (int count = 4; count <= 14; count++)
+            var s = BoardLayoutSettings.Default;
+            int rows = (shelves + columns - 1) / columns;
+            float w = columns * BoardLayout.ShelfWidthInTiles(s, Shelf.SlotCount) + (columns - 1) * s.ColumnGap;
+            float h = rows * BoardLayout.ShelfHeightInTiles(s) + (rows - 1) * s.RowGap;
+            return Mathf.Min(band.width / w, band.height / h);
+        }
+
+        [TestCaseSource(nameof(Phones))]
+        public void ColumnCount_GivesTheBiggestItems_AmongOneTwoAndThree(Phone phone)
+        {
+            for (int count = MinShelves; count <= MaxShelves; count++)
             {
                 var layout = Layout(phone, count);
                 string context = $"{phone}, {count} shelves";
-                Assert.That(layout.Columns, Is.InRange(2, 3), $"{context}: shelves per row");
+                int best = 1;
+                float bestTile = TileFor(layout.Playfield, count, 1);
+                for (int c = 2; c <= 3; c++)
+                {
+                    float t = TileFor(layout.Playfield, count, c);
+                    if (t > bestTile) { best = c; bestTile = t; }
+                }
+                Assert.That(layout.Columns, Is.InRange(1, 3), context);
+                Assert.AreEqual(best, layout.Columns, $"{context}: columns (tiles 1/2/3 = {TileFor(layout.Playfield, count, 1):F1}/" +
+                    $"{TileFor(layout.Playfield, count, 2):F1}/{TileFor(layout.Playfield, count, 3):F1} px)");
+                Assert.AreEqual(bestTile, layout.TileSize, Epsilon, $"{context}: tile is the biggest of the three");
+                for (int c = 1; c <= 3; c++)
+                {
+                    Assert.GreaterOrEqual(layout.TileSize, TileFor(layout.Playfield, count, c) - Epsilon, $"{context}: not smaller than {c} columns");
+                }
+            }
+        }
 
+        [TestCaseSource(nameof(Phones))]
+        public void Shelves_GrowUntilTheyFillTheBandWidthOrHeight(Phone phone)
+        {
+            for (int count = MinShelves; count <= MaxShelves; count++)
+            {
+                var layout = Layout(phone, count);
                 float left = float.MaxValue, right = float.MinValue, top = float.MinValue, bottom = float.MaxValue;
                 for (int i = 0; i < count; i++)
                 {
@@ -109,19 +147,19 @@ namespace Game.Tests.EditMode
                     bottom = Mathf.Min(bottom, r.yMin);
                 }
                 var band = layout.Playfield;
-                bool fillsWidth = right - left >= band.width - 0.5f;
+                // A short last row is narrower, so measure the full row width from the column count.
+                float rowWidth = layout.Columns * layout.GetShelfRect(0).width
+                    + (layout.Columns - 1) * BoardLayoutSettings.Default.ColumnGap * layout.TileSize;
+                bool fillsWidth = rowWidth >= band.width - 0.5f;
                 bool fillsHeight = top - bottom >= band.height - 0.5f;
-                Assert.IsTrue(fillsWidth || fillsHeight, $"{context}: the shelves grow until they touch the band's sides or ends");
-
-                // Levels 1 to 20 (at most 8 shelves) always fill the width on these phones.
-                if (count <= 8) Assert.IsTrue(fillsWidth, $"{context}: fills the width ({right - left:F1} of {band.width:F1} px)");
+                Assert.IsTrue(fillsWidth || fillsHeight, $"{phone}, {count} shelves: the shelves grow until they touch the band's sides or ends");
             }
         }
 
         [TestCaseSource(nameof(Phones))]
-        public void ItemTouchAreas_48dpUpTo8Shelves_44dpFloorUpTo14(Phone phone)
+        public void ItemTouchAreas_48dpUpTo8Shelves_44dpFloorUpTo12(Phone phone)
         {
-            for (int count = 4; count <= 14; count++)
+            for (int count = MinShelves; count <= MaxShelves; count++)
             {
                 var layout = Layout(phone, count);
                 float minDp = count <= 8 ? BoardLayout.TargetTouchDp : BoardLayout.FloorTouchDp;
@@ -148,7 +186,7 @@ namespace Game.Tests.EditMode
             var safe = phone.SafeArea;
             TestContext.WriteLine($"{phone}: safe {safe.width}x{safe.height} px; top bar {safe.height * settings.TopReserveFraction / phone.Density:F1} dp, " +
                 $"bottom bar {safe.height * settings.BottomReserveFraction / phone.Density:F1} dp");
-            for (int count = 4; count <= 14; count++)
+            for (int count = MinShelves; count <= MaxShelves; count++)
             {
                 var layout = Layout(phone, count);
                 float smallest = float.MaxValue;
@@ -162,20 +200,6 @@ namespace Game.Tests.EditMode
                     $"{layout.TileSize / phone.Density:F1} dp, smallest touch {smallest / phone.Density:F1} dp");
                 Assert.Greater(layout.TileSize, 0f);
             }
-        }
-
-        [Test]
-        public void MinColumns_BelowOne_CountsAsOne_AndNeverExceedsTheShelfCount()
-        {
-            var settings = BoardLayoutSettings.Default;
-            settings.MinColumns = 0;
-            var one = BoardLayout.Compute(4, Shelf.SlotCount, new Rect(0, 0, 1080, 2400), settings);
-            Assert.AreEqual(1, one.Columns, "Without a minimum, a tall phone picks one column for 4 shelves (larger tiles).");
-
-            settings = BoardLayoutSettings.Default;
-            settings.MinColumns = 5;
-            var two = BoardLayout.Compute(2, Shelf.SlotCount, new Rect(0, 0, 1080, 2400), settings);
-            Assert.AreEqual(2, two.Columns, "Clamped to the shelf count.");
         }
 
         [Test]
