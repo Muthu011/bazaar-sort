@@ -51,8 +51,11 @@ namespace Game.Tests.EditMode
         /// <summary>
         /// Issue #31: the same 14-shelf deal with its last two shelves locked (2 and 3 clears, as in the World 1 hard
         /// drafts), fully analysed with the default options: shortest solution, 1000 simulated plays and dead-end rate.
+        /// Category "Performance": the 10 s is measured in batch mode (scripts/run-performance-tests.sh), where macOS
+        /// cannot throttle an unfocused editor.
         /// </summary>
         [Test]
+        [Category("Performance")]
         public void Analyse_FourteenShelfLevelWithLocks_UnderTenSeconds()
         {
             var locks = new int[14];
