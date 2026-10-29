@@ -15,7 +15,8 @@ namespace Game.UI
     ///
     /// Thin: shows a panel when <see cref="BoardView.OutcomeReady"/> fires (after the clear animations; which one is
     /// <see cref="ResultPanelChoice"/>: winning the last level shows More-levels-soon instead of Win), hides on
-    /// <see cref="LevelBootstrap.LevelLoaded"/>, and turns button taps into <see cref="LevelBootstrap.Next"/>,
+    /// <see cref="LevelBootstrap.LevelLoaded"/>, shows More-levels-soon when the game opens with every level already won
+    /// (<see cref="LevelBootstrap.AllLevelsCleared"/>, issue #22), and turns button taps into <see cref="LevelBootstrap.Next"/>,
     /// <see cref="LevelBootstrap.Retry"/> and <see cref="LevelBootstrap.ReplayFromFirst"/>. Text uses Unity's built-in legacy font, like the board labels.
     ///
     /// Feel (issue #21): every button presses down (<see cref="ButtonPress"/>). The Win card has a row of
@@ -168,6 +169,8 @@ namespace Game.UI
             _built = true;
             Hide();
             LayoutForScreen();
+            // The bootstrap may have started first: it opened on an all-cleared save before this card existed.
+            if (_levels != null && _levels.IsAwaitingReplay) Show(ResultPanel.MoreLevelsSoon);
         }
 
         /// <summary>Lays the panels out from the real screen: safe area and density. Keeps following screen changes.</summary>
@@ -306,18 +309,29 @@ namespace Game.UI
             _subscribedView = _view;
             _subscribedLevels = _levels;
             if (_subscribedView != null) _subscribedView.OutcomeReady += Show;
-            if (_subscribedLevels != null) _subscribedLevels.LevelLoaded += OnLevelLoaded;
+            if (_subscribedLevels != null)
+            {
+                _subscribedLevels.LevelLoaded += OnLevelLoaded;
+                _subscribedLevels.AllLevelsCleared += OnAllLevelsCleared;
+            }
         }
 
         private void Unsubscribe()
         {
             if (_subscribedView != null) _subscribedView.OutcomeReady -= Show;
-            if (_subscribedLevels != null) _subscribedLevels.LevelLoaded -= OnLevelLoaded;
+            if (_subscribedLevels != null)
+            {
+                _subscribedLevels.LevelLoaded -= OnLevelLoaded;
+                _subscribedLevels.AllLevelsCleared -= OnAllLevelsCleared;
+            }
             _subscribedView = null;
             _subscribedLevels = null;
         }
 
         private void OnLevelLoaded(int index) => Hide();
+
+        /// <summary>The game opened with every level won (issue #22): More-levels-soon over the last level.</summary>
+        private void OnAllLevelsCleared() => Show(ResultPanel.MoreLevelsSoon);
 
         private void OnNext()
         {

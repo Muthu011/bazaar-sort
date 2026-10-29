@@ -1,3 +1,4 @@
+using Game.Services;
 using Game.View;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -6,21 +7,40 @@ using UnityEngine.UI;
 namespace Game.UI
 {
     /// <summary>
-    /// Development-build tools over the board: a row of level buttons (L1..Ln, one per level in the
-    /// <see cref="LevelBootstrap"/> list) in the top HUD reserve, and an fps readout in the bottom reserve. No scene
-    /// references it: <see cref="InstallForScenes"/> adds it at runtime only when
-    /// <see cref="DevBuild.IsLevelSelectEnabled"/> is true for <c>Debug.isDebugBuild</c>, so a release player never
-    /// creates it. Built from code with uGUI; sizes in dp from <see cref="DevLevelSelectLayout"/>.
+    /// Development-build tools over the board: the level select and an fps readout in the bottom reserve. A "Levels"
+    /// button in the top HUD reserve opens a card with one cell per level in the <see cref="LevelBootstrap"/> list
+    /// (every level in <see cref="LevelList"/>, so it grows as level files are added), each showing its number, saved
+    /// stars and state (<see cref="DevLevelCell"/>), plus Reset progress and Close. Tapping a cell loads that level,
+    /// locked or not. While the card is open the board ignores the pointer (<see cref="BoardView.InputBlocked"/>).
+    ///
+    /// Release builds never get it: no scene references it, and <see cref="TryInstall"/> adds it at runtime only when
+    /// <see cref="DevBuild.IsLevelSelectEnabled"/> is true for <c>Debug.isDebugBuild</c>. Should a release player ever
+    /// find one in a scene, it destroys itself on Awake. Built from code with uGUI; sizes in dp from
+    /// <see cref="DevLevelSelectLayout"/>.
     /// </summary>
     public sealed class DevOverlay : MonoBehaviour
     {
+        internal const string ToggleLabel = "Levels";
+        internal const string Title = "Levels (dev build)";
+        internal const string ResetLabel = "Reset progress";
+        internal const string CloseLabel = "Close";
+
         private const int CanvasSortingOrder = 110; // above the result panels, so you can jump levels from any panel
         private const int SlowFps = 55;
 
-        private static readonly Color32 ButtonColor = new Color32(0x00, 0x83, 0x8F, 0xD0);  // peacock teal
-        private static readonly Color32 CurrentColor = new Color32(0xFF, 0xB3, 0x00, 0xFF); // marigold
-        private static readonly Color32 ButtonText = new Color32(0xFF, 0xFF, 0xFF, 0xFF);
-        private static readonly Color32 CurrentText = new Color32(0x3E, 0x27, 0x23, 0xFF);
+        private static readonly Color32 ToggleColor = new Color32(0x00, 0x83, 0x8F, 0xD0);  // peacock teal
+        private static readonly Color32 BackdropColor = new Color32(0x1B, 0x0F, 0x0C, 0xC8);
+        private static readonly Color32 CardColor = new Color32(0xFF, 0xF8, 0xE1, 0xFF);
+        private static readonly Color32 TitleColor = new Color32(0x3E, 0x27, 0x23, 0xFF);
+        private static readonly Color32 CurrentColor = new Color32(0xFF, 0xB3, 0x00, 0xFF);  // marigold
+        private static readonly Color32 ClearedColor = new Color32(0x00, 0x83, 0x8F, 0xFF);  // peacock teal
+        private static readonly Color32 OpenColor = new Color32(0x4D, 0xB6, 0xAC, 0xFF);     // light teal
+        private static readonly Color32 LockedColor = new Color32(0xA1, 0x88, 0x7F, 0xFF);   // shelf brown-grey
+        private static readonly Color32 DarkText = new Color32(0x3E, 0x27, 0x23, 0xFF);
+        private static readonly Color32 LightText = new Color32(0xFF, 0xFF, 0xFF, 0xFF);
+        private static readonly Color32 StarOn = new Color32(0xFF, 0xD5, 0x4F, 0xFF);
+        private static readonly Color32 StarOnCurrent = new Color32(0x3E, 0x27, 0x23, 0xFF);
+        private static readonly Color32 ResetColor = new Color32(0xC6, 0x28, 0x28, 0xFF);    // kumkum red
         private static readonly Color32 FpsGood = new Color32(0x9C, 0xFF, 0x9C, 0xFF);
         private static readonly Color32 FpsSlow = new Color32(0xFF, 0x6E, 0x6E, 0xFF);
 
@@ -29,11 +49,20 @@ namespace Game.UI
         private Canvas _canvas;
         private CanvasScaler _scaler;
         private RectTransform _safeArea;
-        private Button[] _buttons;
-        private Text[] _buttonLabels;
+        private Button _toggle;
+        private GameObject _panel;
+        private RectTransform _card;
+        private RectTransform _title;
+        private Button[] _cells;
+        private Text[] _cellLabels;
+        private Image[][] _cellStars;
+        private DevLevelCellState[] _cellStates;
+        private Button _reset;
+        private Button _close;
         private Text _fps;
         private Text _worst;
         private FpsSampler _sampler = new FpsSampler(FpsSampler.DefaultWindowSeconds);
+        private IProgressService _subscribedProgress;
         private bool _built;
         private bool _trackScreen = true;
         private Rect _lastSafeArea;
@@ -43,13 +72,22 @@ namespace Game.UI
         // ---- Install ----
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
-        private static void InstallForScenes()
+        private static void InstallForScenes() => TryInstall(Debug.isDebugBuild);
+
+        /// <summary>
+        /// The only way the overlay is made: when <see cref="DevBuild.IsLevelSelectEnabled"/> allows it for
+        /// <paramref name="isDevBuild"/>, follows scene loads and adds the overlay to the current scene (returned, or null
+        /// when the scene has no <see cref="LevelBootstrap"/>). In a release build it does nothing and returns null.
+        /// </summary>
+        internal static DevOverlay TryInstall(bool isDevBuild)
         {
-            if (!DevBuild.IsLevelSelectEnabled(Debug.isDebugBuild)) return;
+            if (!DevBuild.IsLevelSelectEnabled(isDevBuild)) return null;
             SceneManager.sceneLoaded -= OnSceneLoaded;
             SceneManager.sceneLoaded += OnSceneLoaded;
-            AttachToScene();
+            return AttachToScene();
         }
+
+        internal static void Uninstall() => SceneManager.sceneLoaded -= OnSceneLoaded;
 
         private static void OnSceneLoaded(Scene scene, LoadSceneMode mode) => AttachToScene();
 
@@ -57,36 +95,39 @@ namespace Game.UI
         /// Adds the overlay, on its own object, for the scene's <see cref="LevelBootstrap"/> if there is one and no
         /// overlay yet. Its own object, because <see cref="BoardView"/> rebuilds the children of its object on Bind.
         /// </summary>
-        private static void AttachToScene()
+        private static DevOverlay AttachToScene()
         {
             var levels = FindAnyObjectByType<LevelBootstrap>();
-            if (levels == null || FindAnyObjectByType<DevOverlay>() != null) return;
+            if (levels == null) return null;
+            var existing = FindAnyObjectByType<DevOverlay>();
+            if (existing != null) return existing;
             var viewCamera = Camera.main;
-            if (viewCamera == null) return;
-            new GameObject("Dev Overlay").AddComponent<DevOverlay>().Configure(levels, viewCamera);
+            if (viewCamera == null) return null;
+            var overlay = new GameObject("Dev Overlay").AddComponent<DevOverlay>();
+            overlay.Configure(levels, viewCamera);
+            return overlay;
         }
 
         /// <summary>Wires the level list and camera from code (installer, tests). Builds on Start.</summary>
         public void Configure(LevelBootstrap levels, Camera viewCamera)
         {
-            if (_levels != null) _levels.LevelLoaded -= OnLevelLoaded;
+            Unsubscribe();
             _levels = levels;
             _camera = viewCamera;
-            if (_levels != null && isActiveAndEnabled) _levels.LevelLoaded += OnLevelLoaded;
+            if (isActiveAndEnabled) Subscribe();
         }
 
-        private void OnEnable()
+        private void Awake()
         {
-            if (_levels != null)
-            {
-                _levels.LevelLoaded -= OnLevelLoaded;
-                _levels.LevelLoaded += OnLevelLoaded;
-            }
+            if (!DevBuild.IsLevelSelectEnabled(Debug.isDebugBuild)) Destroy(gameObject);
         }
+
+        private void OnEnable() => Subscribe();
 
         private void OnDisable()
         {
-            if (_levels != null) _levels.LevelLoaded -= OnLevelLoaded;
+            Unsubscribe();
+            SetBoardBlocked(false);
         }
 
         private void Start()
@@ -114,7 +155,7 @@ namespace Game.UI
 
         // ---- Build and layout ----
 
-        /// <summary>Builds the canvas, one button per level and the fps readout, once.</summary>
+        /// <summary>Builds the canvas, the toggle, the (hidden) level card and the fps readout, once.</summary>
         public void Build()
         {
             if (_built || _levels == null || _camera == null) return;
@@ -130,32 +171,76 @@ namespace Game.UI
             _scaler.uiScaleMode = CanvasScaler.ScaleMode.ConstantPixelSize;
             canvasObject.AddComponent<GraphicRaycaster>();
 
+            var font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+
+            // The backdrop covers the whole screen (not just the safe area) and swallows the taps that miss the card.
+            var backdrop = UiParts.Image(canvasObject.transform, "Dev Level Select", BackdropColor, null);
+            UiParts.Stretch(backdrop.rectTransform);
+            _panel = backdrop.gameObject;
+
             _safeArea = new GameObject("Safe Area", typeof(RectTransform)).GetComponent<RectTransform>();
             _safeArea.SetParent(canvasObject.transform, false);
+            _panel.transform.SetAsFirstSibling();
 
-            var font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            _toggle = CreateButton(_safeArea, "Dev Levels Button", ToggleColor, font, ToggleLabel,
+                DevLevelSelectLayout.ActionFontDp, LightText, Open);
+            var toggleRect = (RectTransform)_toggle.transform;
+            toggleRect.anchorMin = toggleRect.anchorMax = new Vector2(0f, 1f);
+
+            // The card lives under the backdrop object so one SetActive shows or hides the whole panel, but is laid out
+            // against the safe area: the backdrop is full screen, so the card is re-anchored in ApplyLayout.
+            var cardImage = UiParts.Image(_panel.transform, "Card", CardColor, PlaceholderSprites.RoundedSquare);
+            _card = cardImage.rectTransform;
+            _card.anchorMin = _card.anchorMax = new Vector2(0.5f, 0.5f);
+            var title = UiParts.Text(_card, "Title", font, Title, DevLevelSelectLayout.TitleFontDp, TitleColor, TextAnchor.MiddleCenter);
+            _title = title.rectTransform;
+            _title.anchorMin = _title.anchorMax = new Vector2(0.5f, 0.5f);
+
             int count = _levels.LevelCount;
-            _buttons = new Button[count];
-            _buttonLabels = new Text[count];
+            _cells = new Button[count];
+            _cellLabels = new Text[count];
+            _cellStars = new Image[count][];
+            _cellStates = new DevLevelCellState[count];
             for (int i = 0; i < count; i++)
             {
                 int index = i;
-                var image = CreateImage(_safeArea, "Dev Level " + (i + 1), ButtonColor);
-                var rect = image.rectTransform;
-                rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 1f);
-                var button = image.gameObject.AddComponent<Button>();
-                button.targetGraphic = image;
-                button.onClick.AddListener(() => _levels.LoadLevel(index));
-                _buttons[i] = button;
-                _buttonLabels[i] = CreateText(rect, "Label", font, "L" + (i + 1), DevLevelSelectLayout.LabelFontDp,
-                    TextAnchor.MiddleCenter, ButtonText);
-                Stretch(_buttonLabels[i].rectTransform);
+                var cell = CreateButton(_card, "Dev Level " + (i + 1), LockedColor, font, (i + 1).ToString(),
+                    DevLevelSelectLayout.LabelFontDp, LightText, () => Choose(index));
+                var cellRect = (RectTransform)cell.transform;
+                cellRect.anchorMin = cellRect.anchorMax = new Vector2(0.5f, 0.5f);
+                _cells[i] = cell;
+                _cellLabels[i] = cell.GetComponentInChildren<Text>();
+                var labelRect = _cellLabels[i].rectTransform;
+                labelRect.offsetMin = new Vector2(0f, DevLevelSelectLayout.StarDp * 0.75f); // number sits above the stars
+
+                var stars = new Image[ProgressRules.MaxStars];
+                for (int s = 0; s < stars.Length; s++)
+                {
+                    var star = UiParts.Image(cellRect, "Star " + s, StarOn, PlaceholderSprites.Star, sliced: false);
+                    star.raycastTarget = false;
+                    var rect = star.rectTransform;
+                    rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0f);
+                    rect.sizeDelta = new Vector2(DevLevelSelectLayout.StarDp, DevLevelSelectLayout.StarDp);
+                    rect.anchoredPosition = new Vector2((s - 1) * (DevLevelSelectLayout.StarDp + 1f), DevLevelSelectLayout.StarDp * 0.5f + 4f);
+                    stars[s] = star;
+                }
+                _cellStars[i] = stars;
             }
 
-            _fps = CreateText(_safeArea, "Dev Fps", font, DevFpsLabels.Fps(0), DevLevelSelectLayout.FpsFontDp,
-                TextAnchor.MiddleLeft, FpsGood);
-            _worst = CreateText(_safeArea, "Dev Worst Frame", font, DevFpsLabels.WorstMs(0), DevLevelSelectLayout.FpsFontDp,
-                TextAnchor.MiddleLeft, FpsGood);
+            _reset = CreateButton(_card, "Dev Reset Progress", ResetColor, font, ResetLabel, DevLevelSelectLayout.ActionFontDp,
+                LightText, ResetProgress);
+            _close = CreateButton(_card, "Dev Close", ClearedColor, font, CloseLabel, DevLevelSelectLayout.ActionFontDp,
+                LightText, Close);
+            foreach (var button in new[] { _reset, _close })
+            {
+                var rect = (RectTransform)button.transform;
+                rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0.5f);
+            }
+
+            _fps = UiParts.Text(_safeArea, "Dev Fps", font, DevFpsLabels.Fps(0), DevLevelSelectLayout.FpsFontDp, FpsGood,
+                TextAnchor.MiddleLeft);
+            _worst = UiParts.Text(_safeArea, "Dev Worst Frame", font, DevFpsLabels.WorstMs(0), DevLevelSelectLayout.FpsFontDp,
+                FpsGood, TextAnchor.MiddleLeft);
             foreach (var label in new[] { _fps, _worst })
             {
                 var rect = label.rectTransform;
@@ -164,8 +249,9 @@ namespace Game.UI
             }
 
             _built = true;
+            _panel.SetActive(false);
             LayoutForScreen();
-            Highlight(_levels.CurrentIndex);
+            Refresh();
         }
 
         /// <summary>Lays out from the real screen (safe area, density) and keeps following screen changes.</summary>
@@ -199,16 +285,34 @@ namespace Game.UI
 
             var settings = BoardLayoutSettings.Default;
             var safeDp = new Vector2(safeAreaPx.width / density, safeAreaPx.height / density);
-            var metrics = DevLevelSelectLayout.Compute(safeDp, settings.TopReserveFraction, settings.BottomReserveFraction,
-                _buttons.Length);
-            for (int i = 0; i < _buttons.Length; i++)
-            {
-                var rect = (RectTransform)_buttons[i].transform;
-                rect.sizeDelta = metrics.Button;
-                rect.anchoredPosition = metrics.ButtonCentre(i);
-            }
+            var m = DevLevelSelectLayout.Compute(safeDp, settings.TopReserveFraction, settings.BottomReserveFraction,
+                _cells.Length);
 
-            float y = metrics.FpsCentreFromBottom;
+            var toggle = (RectTransform)_toggle.transform;
+            toggle.sizeDelta = m.Toggle;
+            toggle.anchoredPosition = m.ToggleCentre;
+
+            // Centre of the safe area, as an anchor inside the full-screen backdrop.
+            var centre = (min + max) * 0.5f;
+            _card.anchorMin = _card.anchorMax = centre;
+            _card.sizeDelta = m.Card;
+            _card.anchoredPosition = Vector2.zero;
+            _title.sizeDelta = new Vector2(m.Card.x - 2f * m.Padding, DevLevelSelectLayout.TitleHeightDp);
+            _title.anchoredPosition = m.TitleCentre;
+            for (int i = 0; i < _cells.Length; i++)
+            {
+                var rect = (RectTransform)_cells[i].transform;
+                rect.sizeDelta = new Vector2(m.Cell, m.Cell);
+                rect.anchoredPosition = m.CellCentre(i);
+            }
+            var reset = (RectTransform)_reset.transform;
+            reset.sizeDelta = m.Action;
+            reset.anchoredPosition = m.ActionCentre(0);
+            var close = (RectTransform)_close.transform;
+            close.sizeDelta = m.Action;
+            close.anchoredPosition = m.ActionCentre(1);
+
+            float y = m.FpsCentreFromBottom;
             float x = DevLevelSelectLayout.SideMarginDp;
             _fps.rectTransform.sizeDelta = new Vector2(72f, DevLevelSelectLayout.FpsHeightDp);
             _fps.rectTransform.anchoredPosition = new Vector2(x, y);
@@ -216,62 +320,124 @@ namespace Game.UI
             _worst.rectTransform.anchoredPosition = new Vector2(x + 76f, y);
         }
 
-        private void OnLevelLoaded(int index) => Highlight(index);
+        // ---- Open, choose, reset ----
 
-        private void Highlight(int current)
+        public bool IsOpen => _built && _panel.activeSelf;
+
+        /// <summary>Shows the level card with up-to-date progress and stops board input under it.</summary>
+        public void Open()
         {
             if (!_built) return;
-            for (int i = 0; i < _buttons.Length; i++)
+            Refresh();
+            _panel.SetActive(true);
+            SetBoardBlocked(true);
+        }
+
+        public void Close()
+        {
+            if (!_built) return;
+            _panel.SetActive(false);
+            SetBoardBlocked(false);
+        }
+
+        private void Choose(int index)
+        {
+            Close();
+            _levels.LoadLevel(index);
+        }
+
+        private void ResetProgress()
+        {
+            var progress = _levels.Progress;
+            if (progress != null) progress.Reset();
+            Refresh();
+        }
+
+        private void SetBoardBlocked(bool blocked)
+        {
+            if (_levels != null && _levels.View != null) _levels.View.InputBlocked = blocked;
+        }
+
+        /// <summary>Recolours every cell from the save and the level on the board.</summary>
+        private void Refresh()
+        {
+            if (!_built) return;
+            var progress = _levels.Progress;
+            var ids = _levels.LevelIds;
+            for (int i = 0; i < _cells.Length; i++)
             {
-                bool isCurrent = i == current;
-                ((Image)_buttons[i].targetGraphic).color = isCurrent ? CurrentColor : ButtonColor;
-                _buttonLabels[i].color = isCurrent ? CurrentText : ButtonText;
+                int stars = progress == null || i >= ids.Length ? 0 : progress.GetStars(ids[i]);
+                bool unlocked = progress == null || ProgressRules.IsUnlocked(ids, progress, i);
+                var state = DevLevelCell.StateFor(i == _levels.CurrentIndex, stars, unlocked);
+                _cellStates[i] = state;
+
+                Color32 color;
+                switch (state)
+                {
+                    case DevLevelCellState.Current: color = CurrentColor; break;
+                    case DevLevelCellState.Cleared: color = ClearedColor; break;
+                    case DevLevelCellState.Open: color = OpenColor; break;
+                    default: color = LockedColor; break;
+                }
+                ((Image)_cells[i].targetGraphic).color = color;
+                _cellLabels[i].color = state == DevLevelCellState.Current ? DarkText : LightText;
+                for (int s = 0; s < _cellStars[i].Length; s++)
+                {
+                    var star = _cellStars[i][s];
+                    star.gameObject.SetActive(s < stars);
+                    star.color = state == DevLevelCellState.Current ? StarOnCurrent : StarOn;
+                }
             }
         }
 
+        // ---- Events ----
+
+        private void Subscribe()
+        {
+            Unsubscribe();
+            if (_levels == null) return;
+            _levels.LevelLoaded += OnLevelLoaded;
+            _subscribedProgress = _levels.Progress;
+            if (_subscribedProgress != null) _subscribedProgress.Changed += Refresh;
+        }
+
+        private void Unsubscribe()
+        {
+            if (_levels != null) _levels.LevelLoaded -= OnLevelLoaded;
+            if (_subscribedProgress != null) _subscribedProgress.Changed -= Refresh;
+            _subscribedProgress = null;
+        }
+
+        private void OnLevelLoaded(int index) => Refresh();
+
         // ---- Test hooks (Game.Tests.PlayMode) ----
 
-        internal Button[] LevelButtons => _buttons;
+        internal Button ToggleButton => _toggle;
+        internal Button[] LevelButtons => _cells;
+        internal Button ResetButton => _reset;
+        internal Button CloseButton => _close;
+        internal DevLevelCellState CellState(int index) => _cellStates[index];
+        internal int VisibleStars(int index)
+        {
+            int n = 0;
+            foreach (var star in _cellStars[index]) if (star.gameObject.activeSelf) n++;
+            return n;
+        }
+        internal RectTransform Card => _card;
         internal Canvas Canvas => _canvas;
 
         // ---- Building blocks ----
 
-        private static Image CreateImage(Transform parent, string name, Color32 color)
+        private static Button CreateButton(Transform parent, string name, Color32 color, Font font, string label,
+            int fontSize, Color32 textColor, UnityEngine.Events.UnityAction onClick)
         {
-            var go = new GameObject(name, typeof(RectTransform));
-            go.transform.SetParent(parent, false);
-            var image = go.AddComponent<Image>();
-            image.color = color;
-            image.sprite = PlaceholderSprites.RoundedSquare;
-            image.type = Image.Type.Sliced;
-            image.pixelsPerUnitMultiplier = 1.5f;
-            return image;
-        }
-
-        private static Text CreateText(Transform parent, string name, Font font, string text, int size, TextAnchor anchor,
-            Color32 color)
-        {
-            var go = new GameObject(name, typeof(RectTransform));
-            go.transform.SetParent(parent, false);
-            var label = go.AddComponent<Text>();
-            label.font = font;
-            label.text = text;
-            label.fontSize = size;
-            label.fontStyle = FontStyle.Bold;
-            label.alignment = anchor;
-            label.color = color;
-            label.raycastTarget = false;
-            label.horizontalOverflow = HorizontalWrapMode.Overflow;
-            label.verticalOverflow = VerticalWrapMode.Overflow;
-            return label;
-        }
-
-        private static void Stretch(RectTransform rect)
-        {
-            rect.anchorMin = Vector2.zero;
-            rect.anchorMax = Vector2.one;
-            rect.offsetMin = Vector2.zero;
-            rect.offsetMax = Vector2.zero;
+            var image = UiParts.Image(parent, name, color, PlaceholderSprites.RoundedSquare);
+            var button = image.gameObject.AddComponent<Button>();
+            button.targetGraphic = image;
+            button.onClick.AddListener(onClick);
+            var text = UiParts.Text(image.rectTransform, "Label", font, label, fontSize, textColor, TextAnchor.MiddleCenter);
+            UiParts.Stretch(text.rectTransform);
+            return button;
         }
     }
 }

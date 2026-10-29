@@ -53,6 +53,7 @@ namespace Game.EditorTools
             }
 
             ApplyDevPlayerSettings();
+            LevelListSync.Sync(); // every level file on disk is in the build, in play order
 
             if (!File.Exists(GameSceneBuilder.ScenePath))
             {
