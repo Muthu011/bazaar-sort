@@ -54,6 +54,7 @@ Sat = HSV saturation, Val = HSV value. Greyscale = approximate luma (0 black to 
 
 Saturation and brightness limits ("bright but not neon"):
 - Fill colours: Sat 0.85 or lower, and Val 0.95 or lower for any colour that is not a highlight. No fill has two RGB channels at 255.
+- Exception, light neutrals: the wall cream #FFF4DC (Val 1.00), the Lime panel and the Idli white #F4EFE2 (Val 0.96) may exceed Val 0.95 because their Sat is under 0.20. They are never pure white #FFFFFF.
 - Only specular highlights may reach Val 1.0 and they must be under 3% of an object's area.
 - Neutral colours (steel, iron, cream) keep Sat under 0.20.
 - No colour outside this table as a fill. Shading uses the highlight/shadow variants of the same material.
@@ -64,14 +65,16 @@ Contrast checks (WCAG 2.1, contrast ratio):
 | Text on background | Ratio | Result |
 | --- | --- | --- |
 | Roasted brown #3B2418 on Card cream #FFF4DC | 13.3 : 1 | AA and AAA |
-| Roasted brown on Sandstone #E9DCC3 | about 11 : 1 | AA and AAA |
+| Roasted brown on Sandstone #E9DCC3 | 10.7 : 1 | AA and AAA |
 | Roasted brown on Turmeric #F2B632 (button) | 7.9 : 1 | AA and AAA |
 | White on Peacock blue #1F6F8B (button) | 5.7 : 1 | AA (body text) |
 | White on Kumkum red #B3321F | 6.2 : 1 | AA |
-| White on Banana-leaf green #2E6F4E (Leaf dark, for text panels) | 6.0 : 1 | AA |
+| White on Leaf dark #2E6F4E (text panels) | 6.0 : 1 | AA |
+| Roasted brown on Banana-leaf green #4E9A5A | 4.20 : 1 | Fails AA for normal text; large text (24 px+ or 19 px+ bold) and icons only (3 : 1) |
+| White on Banana-leaf green #4E9A5A | 3.45 : 1 | Large text and icons only |
 | White on Night slate #2A3A44 | 11.8 : 1 | AA and AAA |
 
-- Do not put white text on the lighter #4E9A5A green or on Turmeric. Use Roasted brown there.
+- Normal-size text never goes on the lighter #4E9A5A green (brown 4.20 : 1, white 3.45 : 1); use Leaf dark #2E6F4E with white there. White text never goes on Turmeric; use Roasted brown.
 - Numbers (moves, coins, padlock count) are 20 dp or larger, bold, and always use the ratios above. Large text needs 3 : 1, but we aim for AA body text everywhere.
 - Re-check any new text and background pair with a WCAG contrast calculator before it ships.
 
@@ -85,7 +88,7 @@ Colour-blind note:
 - Shading: 3 to 4 value steps per material plus a soft highlight strip on the top-left side. Gradients are smooth, no banding.
 - Brass: warm highlight (#E8C46A), orange-brown shadow (#7A5416), faint wear marks only. Steel: cool highlight, soft reflections of cream and shelf colour, no mirror-perfect reflections or reflected windows. Iron: matte with one faint highlight.
 - Shape language: rounded forms, chunky proportions (about 15% thicker than real life) so details survive at small size. Radius of the smallest visible detail is no less than 6 px at 512 px.
-- Detail budget: at most 3 secondary details per object (rivets, a handle grip, a vent). No engraving, no patterns, no text. Fine detail below 10 px at 512 px is removed.
+- Detail budget: at most 3 secondary details per object (rivets, a handle grip, a vent). No engraving, no patterns, no text. Repeated elements count as one detail (the idli holes and idlis, the ring of spice bowls). So `idli_stand` is plates, centre post and idlis, and `masala_dabba` is the tin, the bowl ring and a spoon. Fine detail below 10 px at 512 px is removed.
 - Contact shadow: a small soft ellipse at the base of the object, inside the canvas, 25% opacity of Plank dark. No long cast shadows (the game draws its own shadow for lifted and dragged items).
 - Edges: anti-aliased, transparent background, no white fringe. Export as PNG with straight (non-premultiplied) alpha, sRGB.
 - Every object uses the same light direction. If a generated image has light from another side, flip or redo it.
@@ -101,11 +104,11 @@ Colour-blind note:
 | 4 | 1 | 259 | 86 |
 | 6 | 1 | 170 | 57 |
 | 8 | 2 | 138 | 46 |
-| 14 | 2 to 3 | about 138 or less | about 46 or less |
+| 14 | 2 | 137.8 | 46 |
 | 14 on 720 x 1600 | 2 | 92 | 46 |
 
 - So an object is shown between about 138 px (46 dp, 8 shelves, the worst case for levels 1 to 20) and 259 px (86 dp, 4 shelves). The 48 dp touch rule (`BoardLayout.TargetTouchDp`, floor `FloorTouchDp` 44) is met by the touch area growing into the gaps, but the picture itself is about 46 dp at its smallest. This is why the readability test below uses 48 dp.
-- Source size is 2x the largest display size where practical, so the game downscales and mipmaps; it never upscales. Object source: 512 px (259 px max display is 1.98x). Game import: 512 px max, compressed for Android (see the art director workflow in `CLAUDE.md`).
+- Source size is 2x the largest display size where practical, so the game downscales and mipmaps; it never upscales art. The only stretching is the flat centre of a 9-slice panel, which carries no detail. Object source: 512 px (259 px max display is 1.98x). Game import: 512 px max, compressed for Android (import settings are described in `.claude/agents/art-director.md`; provenance goes in `docs/art-provenance.csv`).
 - Other sizes come from UI constants: button height 56 dp (`ResultPanelLayout.ButtonHeightDp`), card max width 320 dp (`MaxCardWidthDp`), star 52 dp (`StarDp`), HUD counter 84 x 40 dp (`HudLayout.CounterWidthDp/CounterHeightDp`), padlock width 0.55 tile with aspect 70/64 (`BoardView.PadlockWidthTiles`, `PlaceholderSprites.PadlockAspect`).
 
 ### Asset list (World 1)
@@ -123,13 +126,13 @@ All PNG, RGBA, transparent background unless marked, sRGB. "Display" is at 1080 
 | `brass_kudam` | 512 x 512 | same | same |
 | `rolling_pin` | 512 x 512 | same | same |
 | `chai_kettle` | 512 x 512 | same | same |
-| Shelf (one, all 3-slot shelves) | 1808 x 826 | 901 x 412 px at 4 shelves, 481 x 220 px at 8 shelves | Aspect 3.48 : 1.59. Plank plus back panel, hidden-layer strip across the top 22% (0.35 / 1.59). Locked state is drawn in code. |
+| Shelf (one, all 3-slot shelves) | 1808 x 826 | 902 x 412 px at 4 shelves, 480 x 219 px at 8 shelves | Aspect 3.48 : 1.59. Plank plus back panel, hidden-layer strip across the top 22% (0.35 / 1.59). Locked state is drawn in code. |
 | Background | 1200 x 2800 | scaled to cover the screen | Opaque. Keep key detail inside the centre 1200 x 2133 so 9:16 phones crop safely. Soft blur, low contrast, nothing busy behind the board (the board sits between 10% and 90% of the height). |
-| Button (primary and secondary share one 9-slice, tinted) | 512 x 336 | 256 x 168 px (about 85 x 56 dp) | 9-slice, border 96. Neutral light base so it can be tinted Turmeric or Peacock blue |
-| Panel / card | 768 x 768 | up to 960 px wide (320 dp) | 9-slice, border 144. Card cream with a thin Plank mid edge and soft shadow |
-| HUD pill (counter) | 504 x 240 | 252 x 120 px (84 x 40 dp) | 9-slice, border 96 |
+| Button (primary and secondary share one 9-slice, tinted) | 480 x 336 | 816 x 168 px (272 x 56 dp: card 320 dp minus 2 x 24 dp padding, `ResultPanelLayout`) | 9-slice, border 120 on all sides (shown as 60 px, so source is 2x). Check: 2 x 120 = 240 is less than the 336 height and 480 width. Neutral light base so it can be tinted Turmeric or Peacock blue |
+| Panel / card | 960 x 960 | up to 960 px wide (320 dp) | 9-slice, border 144 (shown 1:1, 48 dp). Check: 2 x 144 = 288 is less than 960. Card cream with a thin Plank mid edge and soft shadow |
+| HUD pill (counter) | 504 x 240 | 252 x 120 px (84 x 40 dp) | 9-slice, border 80 (shown as 40 px, so source is 2x). Check: 2 x 80 = 160 is less than the 240 height and 504 width |
 | Padlock | 256 x 280 | up to 142 x 156 px (0.55 tile at 259 px) | Brass, plain, no keyhole text; aspect 64 : 70 |
-| Coin | 192 x 192 | 96 px (32 dp) | Brass disc with a plain embossed ring and a simple rupee-free centre (no symbols, no text) |
+| Coin | 216 x 216 | 108 px (36 dp, `UiFeel.CoinDp`) | Brass disc with a plain embossed ring and a simple rupee-free centre (no symbols, no text) |
 | Star | 256 x 256 | 156 px (52 dp) | Filled Turmeric star with warm highlight. An empty version in Sandstone with a Plank mid edge, same size |
 | Icons (pause, sound, retry) | 128 x 128 each | 72 px (24 dp) | Roasted brown, simple, not in this issue's scope; listed for later |
 
@@ -155,7 +158,7 @@ All PNG, RGBA, transparent background unless marked, sRGB. "Display" is at 1080 
 | rolling_pin | Long bar with two end knobs, turned about 30 degrees so it fills the square | Banana-leaf green #4E9A5A (lacquered handles, pale wood roller) | 0.50 | `coconut_scraper` (above). Also keep it thicker than a real pin so it does not shrink to a line at 48 dp |
 | chai_kettle | Pot-bellied body with a long curved spout on one side, a high arched handle, small knob on the lid | Jamun purple #6B4A8A (enamel) | 0.34 | `pressure_cooker`: kettle has the long spout, arched handle and is purple; cooker is squat with two short handles and is red. In greyscale these two are close (0.30 and 0.34), so the spout and handle must stay bold |
 
-Greyscale pairs that rely on silhouette: `steel_tiffin`, `coconut_scraper`, `chai_kettle`, `pressure_cooker` (all 0.30 to 0.38). These must be flagged again when the real art arrives; if any pair is confused at 64 px, change the object's lightness rather than adding detail.
+Greyscale pairs that rely on silhouette: `steel_tiffin`, `coconut_scraper`, `chai_kettle`, `pressure_cooker` (all 0.30 to 0.38), and `rolling_pin` (0.50) with `brass_kudam` (0.54). The rolling pin is a long thin bar and the kudam a round pot, so the silhouette must carry that pair. These must be flagged again when the real art arrives; if any pair is confused at 64 px, change the object's lightness rather than adding detail.
 
 ### Prompts for the 10 objects
 These are tool-neutral text prompts. Use the shared style block with the object line. Generate on a plain light background and remove it by hand to get the transparent PNG, or ask the tool for a transparent background if it can.
