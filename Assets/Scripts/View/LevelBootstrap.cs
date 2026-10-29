@@ -19,6 +19,12 @@ namespace Game.View
     /// level is loaded with its input held and <see cref="AllLevelsCleared"/> is raised, so the result panels show
     /// "More levels coming soon" with Replay. Level ids are the level file names (w1_l001...). Without progress (tests
     /// that wire levels from code), it starts at the configured index and saves nothing.
+    ///
+    /// Stars and coins (issue #44): the bootstrap counts the moves of the level being played (every
+    /// <see cref="Board.Moved"/>; a drop back on the same shelf is a cancel and never raises it) from each load, so a
+    /// Retry starts again at 0. On Won the stars come from <see cref="WinRewards.StarsFor"/> against the level's
+    /// <c>solver.minMoves</c> and are kept in <see cref="LastWinStars"/> for the Win card, with or without progress;
+    /// with progress the win, its best stars and its coins are saved in one write.
     /// </summary>
     public sealed class LevelBootstrap : MonoBehaviour
     {
@@ -34,6 +40,9 @@ namespace Game.View
         private Board _board;
         private LevelData _level;
         private int _current = -1;
+        private int _moves;
+        private int _lastWinStars;
+        private int _lastWinCoins;
         private bool _awaitingReplay;
         private Rect _lastSafeArea;
         private int _lastWidth;
@@ -61,6 +70,15 @@ namespace Game.View
 
         /// <summary>Parsed data of the level being played (tutorial key, limits, ...), or null before the first load.</summary>
         public LevelData CurrentLevel => _level;
+
+        /// <summary>Moves made since the current level was loaded.</summary>
+        public int MovesMade => _moves;
+
+        /// <summary>Stars earned by the last win of the current level (1..3), or 0 when it hasn't been won since loading.</summary>
+        public int LastWinStars => _lastWinStars;
+
+        /// <summary>Coins added to the wallet by that win, or 0 (also 0 without saved progress).</summary>
+        public int LastWinCoins => _lastWinCoins;
 
         /// <summary>Name of the level asset being played, or null.</summary>
         public string CurrentLevelName => _current < 0 ? null : Levels[_current].name;
@@ -172,6 +190,10 @@ namespace Game.View
             _board = result.Board;
             _level = result.Level;
             _board.Won += OnWon;
+            _board.Moved += OnMoved;
+            _moves = 0;
+            _lastWinStars = 0;
+            _lastWinCoins = 0;
             _current = index;
             _awaitingReplay = false;
             _lastSafeArea = Screen.safeArea;
@@ -205,16 +227,24 @@ namespace Game.View
             return LoadLevel(LevelSequence.First);
         }
 
+        private void OnMoved(MoveInfo move) => _moves++;
+
         private void OnWon()
         {
+            if (_current < 0) return;
+            _lastWinStars = WinRewards.StarsFor(_moves, _level?.MinMoves ?? 0);
             var progress = Progress;
-            if (progress == null || _current < 0) return;
-            ProgressRules.RecordWin(LevelIds, progress, _current);
+            if (progress == null) return;
+            _lastWinCoins = ProgressRules.RecordWin(LevelIds, progress, _current, _lastWinStars);
         }
 
         private void Unwatch()
         {
-            if (_board != null) _board.Won -= OnWon;
+            if (_board != null)
+            {
+                _board.Won -= OnWon;
+                _board.Moved -= OnMoved;
+            }
             _board = null;
         }
 

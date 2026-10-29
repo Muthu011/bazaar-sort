@@ -9,10 +9,14 @@ namespace Game.UI
     /// <summary>
     /// The in-game HUD (issues #21, #40), built from code with uGUI on its own screen-space camera canvas, laid out by
     /// <see cref="HudLayout"/> inside the safe area. Top bar: the level number. Bottom bar: placeholder booster slots
-    /// (boosters arrive in #42), the clear counter (coin icon and a number, display only, see <see cref="ClearCounter"/>)
+    /// (boosters arrive in #42), the coin pill (coin icon and the wallet balance from the bootstrap's
+    /// <see cref="LevelBootstrap.Progress"/>, issue #44, refreshed whenever progress changes: a win's coins, a booster
+    /// spend; 0 without progress; text from <see cref="CoinBalanceText"/>)
     /// and the settings button, which opens the <see cref="SettingsPanel"/> with the haptics on/off toggle. On every <see cref="BoardView.ClearShown"/> that animated, a coin
-    /// flies from the triple to the counter (DOTween, pooled: <see cref="UiFeel.CoinPool"/> coins, each with one tween
-    /// built once and restarted) and the number ticks up as it lands. Resets on every level load.
+    /// flies from the triple to the pill (DOTween, pooled: <see cref="UiFeel.CoinPool"/> coins, each with one tween
+    /// built once and restarted) and the pill punches as it lands. That flight is feel only: clears earn no coins, so
+    /// the number stays the wallet; <see cref="ClearCounter"/> tracks the clears and the coins in flight. The clear
+    /// tally resets on every level load.
     /// Thin: no rules; the setting lives in <see cref="ISettingsService"/>.
     /// </summary>
     public sealed class GameHud : MonoBehaviour
@@ -39,6 +43,8 @@ namespace Game.UI
         private ISettingsService _subscribedSettings;
         private BoardView _subscribedView;
         private LevelBootstrap _subscribedLevels;
+        private IProgressService _subscribedProgress;
+        private int _shownBalance = -1;
 
         private Canvas _canvas;
         private RectTransform _canvasRect;
@@ -137,7 +143,11 @@ namespace Game.UI
             _icon.anchorMin = _icon.anchorMax = new Vector2(0f, 0.5f);
             _icon.sizeDelta = new Vector2(28f, 28f);
             _icon.anchoredPosition = new Vector2(8f + 14f, 0f);
-            _count = UiParts.Text(_pill, "Count", font, _counter.Text, HudLayout.CounterFontDp, CounterText, TextAnchor.MiddleRight);
+            _count = UiParts.Text(_pill, "Count", font, CoinBalanceText.For(0), HudLayout.CounterFontDp, CounterText, TextAnchor.MiddleRight);
+            // Four-digit balances shrink to fit the pill instead of spilling out of it.
+            _count.resizeTextForBestFit = true;
+            _count.resizeTextMinSize = HudLayout.CounterFontDp / 2;
+            _count.resizeTextMaxSize = HudLayout.CounterFontDp;
             var countRect = _count.rectTransform;
             countRect.anchorMin = Vector2.zero;
             countRect.anchorMax = Vector2.one;
@@ -182,6 +192,8 @@ namespace Game.UI
             }
 
             _built = true;
+            _shownBalance = -1;
+            WatchProgress();
             RefreshToggle();
             // The bootstrap may have loaded its first level before this HUD was built.
             if (_levels != null && _levels.CurrentIndex >= 0) ShowLevel(_levels.CurrentIndex + 1);
@@ -250,6 +262,33 @@ namespace Game.UI
             if (_subscribedView != null) _subscribedView.ClearShown += OnClearShown;
             if (_subscribedLevels != null) _subscribedLevels.LevelLoaded += OnLevelLoaded;
             _subscribedSettings.Changed += RefreshToggle;
+            WatchProgress();
+        }
+
+        /// <summary>
+        /// Follows the bootstrap's progress (it can be set after the HUD is wired, so this runs again on every level
+        /// load) and shows its balance.
+        /// </summary>
+        private void WatchProgress()
+        {
+            var progress = _subscribedLevels != null ? _subscribedLevels.Progress : null;
+            if (!ReferenceEquals(progress, _subscribedProgress))
+            {
+                if (_subscribedProgress != null) _subscribedProgress.Changed -= RefreshBalance;
+                _subscribedProgress = progress;
+                if (_subscribedProgress != null) _subscribedProgress.Changed += RefreshBalance;
+            }
+            RefreshBalance();
+        }
+
+        /// <summary>Shows the wallet balance; the text is only rebuilt when the number changes.</summary>
+        private void RefreshBalance()
+        {
+            if (!_built) return;
+            int balance = _subscribedProgress != null ? _subscribedProgress.Coins : 0;
+            if (balance == _shownBalance) return;
+            _shownBalance = balance;
+            _count.text = CoinBalanceText.For(balance);
         }
 
         private void Unsubscribe()
@@ -257,6 +296,8 @@ namespace Game.UI
             if (_subscribedView != null) _subscribedView.ClearShown -= OnClearShown;
             if (_subscribedLevels != null) _subscribedLevels.LevelLoaded -= OnLevelLoaded;
             if (_subscribedSettings != null) _subscribedSettings.Changed -= RefreshToggle;
+            if (_subscribedProgress != null) _subscribedProgress.Changed -= RefreshBalance;
+            _subscribedProgress = null;
             _subscribedView = null;
             _subscribedLevels = null;
             _subscribedSettings = null;
@@ -265,6 +306,7 @@ namespace Game.UI
         private void OnLevelLoaded(int index)
         {
             ResetCounter();
+            WatchProgress();
             ShowLevel(index + 1);
             CloseSettings();
         }
@@ -295,7 +337,7 @@ namespace Game.UI
             if (_view != null) _view.InputBlocked = false;
         }
 
-        /// <summary>Back to 0 and every flying coin dropped (level load, Retry, Next, Replay).</summary>
+        /// <summary>Clear tally back to 0 and every flying coin dropped (level load, Retry, Next, Replay). The wallet is untouched.</summary>
         public void ResetCounter()
         {
             _counter.Reset();
@@ -303,7 +345,6 @@ namespace Game.UI
             {
                 foreach (var coin in _coins) coin.Stop();
                 if (_punch != null) _punch.Rewind();
-                _count.text = _counter.Text;
             }
         }
 
@@ -313,7 +354,6 @@ namespace Game.UI
             if (coin == null || !coin.Launch(ScreenToCanvas(clear.Pixel), ScreenToCanvas(IconScreenPoint())))
             {
                 _counter.AddClear(false);
-                if (_built) _count.text = _counter.Text;
                 return;
             }
             _counter.AddClear(true);
@@ -322,7 +362,6 @@ namespace Game.UI
         private void OnCoinLanded()
         {
             if (!_counter.CoinLanded()) return;
-            _count.text = _counter.Text;
             if (_punch != null) _punch.Restart();
         }
 

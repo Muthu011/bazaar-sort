@@ -230,11 +230,14 @@ namespace Game.Tests.PlayMode
         [UnityTest]
         public IEnumerator Clear_BurstsAndFliesACoin_CounterTicksOnLanding_AndResetsOnLoad()
         {
+            // The clear tally (hud.Counter.Shown) ticks as coins land; the pill text is the wallet (issue #44), which
+            // clears never change: without saved progress it reads 0 throughout.
             var bootstrap = AddBootstrap(W1L001, W1L002);
             var effects = AddEffects();
             var hud = AddHud(bootstrap);
             yield return null; // Start: level loads, HUD builds
             yield return null;
+            Assert.AreEqual(0, hud.Counter.Shown);
             Assert.AreEqual("0", hud.CountText);
 
             var board = _view.Board;
@@ -243,11 +246,12 @@ namespace Game.Tests.PlayMode
             Assert.AreEqual(1, effects.BurstCount, "Burst at the top of the pop.");
             Assert.GreaterOrEqual(effects.Burst.particleCount, ParticleFx.BurstItemSparks, "Sparks emitted.");
             Assert.AreEqual(1, hud.CoinsInFlight, "A coin flies to the counter.");
-            Assert.AreEqual("0", hud.CountText, "The number waits for the coin.");
+            Assert.AreEqual(0, hud.Counter.Shown, "The tally waits for the coin.");
             Assert.AreEqual(1, _device.LightCount, "Light haptic on the clear.");
 
             yield return WaitUntil(() => hud.CoinsInFlight == 0);
-            Assert.AreEqual("1", hud.CountText, "Ticks up by one as the coin lands.");
+            Assert.AreEqual(1, hud.Counter.Shown, "Ticks up by one as the coin lands.");
+            Assert.AreEqual("0", hud.CountText, "A clear earns no coins: the wallet is unchanged.");
             yield return WaitUntil(() => !_view.IsAnimating);
             for (int slot = 0; slot < Shelf.SlotCount; slot++)
             {
@@ -257,13 +261,14 @@ namespace Game.Tests.PlayMode
             }
 
             bootstrap.Retry();
-            Assert.AreEqual("0", hud.CountText, "Retry resets the counter.");
+            Assert.AreEqual(0, hud.Counter.Shown, "Retry resets the counter.");
             Assert.IsTrue(_view.Board.TryMove(1, 1, 0));
             _view.CompleteAnimations(); // skipped pop: counts at once, no coin
-            Assert.AreEqual("1", hud.CountText);
+            Assert.AreEqual(1, hud.Counter.Shown);
             Assert.AreEqual(0, hud.CoinsInFlight);
             Assert.IsTrue(bootstrap.Next());
-            Assert.AreEqual("0", hud.CountText, "Next resets the counter.");
+            Assert.AreEqual(0, hud.Counter.Shown, "Next resets the counter.");
+            Assert.AreEqual("0", hud.CountText);
         }
 
         [UnityTest]
@@ -276,10 +281,10 @@ namespace Game.Tests.PlayMode
 
             Assert.IsTrue(_view.Board.TryMove(1, 0, 0)); // tumblers fly to s1 and will clear
             Assert.IsTrue(_view.Board.TryMove(2, 0, 0)); // idli stand onto s1 at once: the clear snaps
-            Assert.AreEqual("1", hud.CountText, "Counted at once, without a coin.");
+            Assert.AreEqual(1, hud.Counter.Shown, "Counted at once, without a coin.");
             Assert.AreEqual(0, hud.CoinsInFlight);
             yield return WaitUntil(() => !_view.IsAnimating);
-            Assert.AreEqual("1", hud.CountText, "Never counted twice.");
+            Assert.AreEqual(1, hud.Counter.Shown, "Never counted twice.");
         }
 
         // ---- Reveal ----
@@ -330,7 +335,8 @@ namespace Game.Tests.PlayMode
             Assert.IsTrue(_view.Board.TryMove(0, 0, 1));
             yield return WaitUntil(() => _view.Outcome != BoardOutcome.None);
             Assert.IsTrue(panels.IsWinVisible);
-            Assert.AreEqual(3, panels.WinStars.Length, "Always 3 stars for now.");
+            Assert.AreEqual(3, panels.WinStars.Length, "Three star slots.");
+            Assert.AreEqual(3, panels.WinStarsLit, "No level list wired: all three lit.");
             Assert.IsFalse(panels.AreStarsAtRest, "Stars are still dropping in.");
 
             var landed = new float[3] { -1f, -1f, -1f };
@@ -495,7 +501,7 @@ namespace Game.Tests.PlayMode
 
             Assert.AreEqual(BoardOutcome.Won, _view.Outcome);
             Assert.AreEqual(2, effects.BurstCount - burstsBefore, "Both clears burst inside the measured frames.");
-            Assert.AreEqual("2", hud.CountText, "Both coins landed inside the measured frames.");
+            Assert.AreEqual(2, hud.Counter.Shown, "Both coins landed inside the measured frames.");
             Assert.IsTrue(panels.IsWinVisible);
             Assert.IsTrue(panels.AreStarsAtRest, "Star drop finished inside the measured frames.");
             Assert.GreaterOrEqual(panels.ConfettiBursts, 2, "Confetti started inside the measured frames.");

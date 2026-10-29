@@ -30,7 +30,7 @@ namespace Game.UI
         public const float CounterPunch = 0.25f;
         public const float CounterPunchSeconds = 0.2f;
 
-        /// <summary>Stars on the Win panel (Muthu, issue #21: always 3 for now).</summary>
+        /// <summary>Star slots on the Win panel, one per possible star; the earned ones are lit (issue #44).</summary>
         public const int WinStars = 3;
 
         /// <summary>Gap between one star starting to drop and the next.</summary>

@@ -1,9 +1,9 @@
 namespace Game.UI
 {
     /// <summary>
-    /// The HUD clear counter's display logic (issue #21). Display only: counts the triples cleared in the level being
-    /// played, starts at 0 on every load (first load, Retry, Next, Replay) and is never saved, spent or valued; no coin
-    /// field exists in Core or save data (Muthu: real coins come with boosters in Slice 3).
+    /// The HUD clear tally behind the coin flights (issue #21): counts the triples cleared in the level being played,
+    /// starts at 0 on every load (first load, Retry, Next, Replay) and is never saved, spent or valued. Since issue #44
+    /// the pill shows the coin wallet (<see cref="CoinBalanceText"/>), not this tally; clears earn no coins.
     ///
     /// A clear whose coin is flying shows when the coin lands (<see cref="CoinLanded"/>); a clear with no coin (skipped
     /// pop, coin pool busy) shows at once. <see cref="Shown"/> never passes <see cref="Cleared"/>. Pure, Edit Mode tested;

@@ -20,7 +20,9 @@ namespace Game.UI
     /// <see cref="LevelBootstrap.Retry"/> and <see cref="LevelBootstrap.ReplayFromFirst"/>. Text uses Unity's built-in legacy font, like the board labels.
     ///
     /// Feel (issue #21): every button presses down (<see cref="ButtonPress"/>). The Win card has a row of
-    /// <see cref="UiFeel.WinStars"/> stars (always 3 for now, Muthu) that drop in one at a time with a scale punch,
+    /// <see cref="UiFeel.WinStars"/> star slots that drop in one at a time with a scale punch: the stars the win earned
+    /// (<see cref="LevelBootstrap.LastWinStars"/>, issue #44; all three when no level list is wired) in marigold, the
+    /// rest as dim empty stars,
     /// then confetti falls (<see cref="ParticleFx.CreateConfetti"/>); More-levels-soon, also a win, gets the confetti.
     /// The star drop is one DOTween sequence built once and restarted on every Win; outside play mode (screenshots)
     /// the stars just show at rest.
@@ -63,6 +65,7 @@ namespace Game.UI
         private const int ConfettiSortingOrder = 105;
 
         private static readonly Color32 StarColor = new Color32(0xFF, 0xB3, 0x00, 0xFF); // marigold
+        private static readonly Color32 StarEmptyColor = new Color32(0xD7, 0xCC, 0xC8, 0xFF); // placeholder: pale clay
 
         private static readonly Color32 BackdropColor = new Color32(0x1B, 0x0F, 0x0C, 0xB0);
         private static readonly Color32 CardColor = new Color32(0xFF, 0xF8, 0xE1, 0xFF);
@@ -265,7 +268,11 @@ namespace Game.UI
             _backdrop.SetActive(panel != ResultPanel.None);
 
             StopConfetti();
-            if (panel == ResultPanel.Win) PlayStars();
+            if (panel == ResultPanel.Win)
+            {
+                _win.SetEarnedStars(EarnedStars, StarColor, StarEmptyColor);
+                PlayStars();
+            }
             else if (_stars != null) _stars.Pause();
             if (panel == ResultPanel.MoreLevelsSoon) PlayConfetti();
         }
@@ -468,8 +475,26 @@ namespace Game.UI
         internal RectTransform FailVideoIcon => _videoIcon;
         internal Canvas Canvas => _canvas;
 
-        /// <summary>Win card stars (always <see cref="UiFeel.WinStars"/>).</summary>
+        /// <summary>Stars to light on the Win card: the bootstrap's last win, or all of them without one.</summary>
+        private int EarnedStars => _levels != null && _levels.LastWinStars > 0 ? _levels.LastWinStars : UiFeel.WinStars;
+
+        /// <summary>Win card star slots (always <see cref="UiFeel.WinStars"/>).</summary>
         internal Image[] WinStars => _win.Stars;
+
+        /// <summary>How many Win card stars are lit (earned colour).</summary>
+        internal int WinStarsLit
+        {
+            get
+            {
+                int n = 0;
+                foreach (var star in _win.Stars)
+                {
+                    var c = (Color32)star.color;
+                    if (c.r == StarColor.r && c.g == StarColor.g && c.b == StarColor.b) n++;
+                }
+                return n;
+            }
+        }
 
         /// <summary>True while the stars are still dropping.</summary>
         internal bool AreStarsPlaying => _stars != null && _stars.IsPlaying();
@@ -631,6 +656,17 @@ namespace Game.UI
                     if (Mathf.Abs(star.rectTransform.localScale.x - 1f) > 0.001f) return false;
                 }
                 return true;
+            }
+
+            /// <summary>The first <paramref name="earned"/> stars in <paramref name="on"/>, the rest in <paramref name="off"/>; alpha is kept for the drop.</summary>
+            public void SetEarnedStars(int earned, Color32 on, Color32 off)
+            {
+                for (int i = 0; i < Stars.Length; i++)
+                {
+                    Color c = i < earned ? (Color)on : (Color)off;
+                    c.a = Stars[i].color.a;
+                    Stars[i].color = c;
+                }
             }
 
             private void SetStar(int index, Vector2 position, float alpha)
