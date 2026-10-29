@@ -3,7 +3,7 @@
 Source of truth: the "Indian Object Sort Game: Go-Live Plan" doc. This file is the short version agents work from; update it when the plan changes.
 
 ## Core
-- Board: 4–14 shelves per level. Each shelf has 3 front slots and up to 4 layers behind.
+- Board: 4–12 shelves per level (12 is the cap for the whole game; Muthu, 2026-10-29). Each shelf has 3 front slots and up to 4 layers behind.
 - Move: tap or drag a front object to any shelf with a free front slot.
 - Clear: 3 identical objects on a shelf's front row clear; the next layer slides forward.
 - Win: all objects cleared. Fail: out of moves, out of time, or no legal move left (offer continue).
@@ -49,9 +49,11 @@ Level files may only use these ids (snake_case, case-sensitive). The code copy i
 - Placeholder look: dark scrim over the shelf and a brass padlock on its top-right corner showing the clears left. The number bumps on each clear; the padlock grows and fades out when the shelf opens.
 
 ### Board size and touch areas (decided by Muthu, Oct 2026)
-- The 4–14 shelf layout is fixed. Don't shrink or move shelves or items to make tap targets bigger.
+- The 4–12 shelf layout is fixed. Don't shrink or move shelves or items to make tap targets bigger.
 - Each item's touch area is bigger than its picture: it extends into the gaps between items and halfway into the gaps between shelves, to reach 48 dp wherever there's room.
-- 44 dp is the floor on 720p phones (the 13–14 shelf boards).
+- 44 dp is the floor on 720p phones (the biggest boards).
+- Every level has at most 12 shelves, for the whole game. No per-phone special cases (Muthu, 2026-10-29). The loader and the solver pack tests reject a level with more than 12 shelves.
+- Columns: the layout uses the column count (1, 2 or 3) that gives the biggest items, so small boards stay one column (Muthu, 2026-10-29).
 - Levels 1 to 20 use at most 8 shelves.
 
 ### First-try win-rate targets (decided by Muthu, Oct 2026)
