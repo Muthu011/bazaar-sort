@@ -32,6 +32,15 @@ namespace Game.Tests.PlayMode
         private TextAsset[] _levels;
         private ProgressService _progress;
         private Mouse _mouse;
+        private RenderTexture _phone;
+        private bool _laidOut;
+
+        /// <summary>
+        /// Clicks go to a fixed portrait phone (1080x2400 at 3 px/dp, full screen) rendered into a texture, so the tests
+        /// do not depend on the editor Game view's size (issue #40: with a portrait Game view preset the overlay followed
+        /// the Game view's screen while the clicks did not land on the cells).
+        /// </summary>
+        private static readonly Rect PhoneSafeArea = new Rect(0, 0, 1080, 2400);
 
         /// <summary>Every level file, in play order, like the generated LevelList.</summary>
         private static string[] AllLevelPaths() => LevelOrder.Sort(
@@ -45,6 +54,9 @@ namespace Game.Tests.PlayMode
 
             _cameraObject = new GameObject("Test Camera");
             _camera = _cameraObject.AddComponent<Camera>();
+            _phone = new RenderTexture(1080, 2400, 24);
+            _camera.targetTexture = _phone;
+            _laidOut = false;
             _viewObject = new GameObject("Board View");
             _view = _viewObject.AddComponent<BoardView>();
             _viewObject.AddComponent<BoardInput>().Configure(_view);
@@ -73,6 +85,8 @@ namespace Game.Tests.PlayMode
             Object.Destroy(_overlayObject);
             Object.Destroy(_viewObject);
             Object.Destroy(_cameraObject);
+            _phone.Release();
+            Object.Destroy(_phone);
             foreach (var level in _levels) Object.Destroy(level);
             base.TearDown();
         }
@@ -89,6 +103,13 @@ namespace Game.Tests.PlayMode
 
         private IEnumerator ClickButton(Button button)
         {
+            if (!_laidOut && _camera.targetTexture == _phone)
+            {
+                // Once built (after Start): pin the board and overlay to the phone instead of following Screen.
+                _view.Bind(_view.Board, _camera, PhoneSafeArea, BoardLayoutSettings.Default);
+                _overlay.Layout(PhoneSafeArea, 3f);
+                _laidOut = true;
+            }
             Canvas.ForceUpdateCanvases();
             yield return Click(ScreenRect((RectTransform)button.transform).center);
             yield return null;
