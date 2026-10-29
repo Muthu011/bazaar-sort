@@ -72,7 +72,7 @@ Measured by the solver's first-try estimate (`estWinRate`):
 - Level 11 onward: normal 0.70 to 0.85; hard and boss 0.35 to 0.50.
 
 ## FTUE (first-time user flow)
-L1: one rule, "Match 3!", hand pointer. L2: hidden layer, no text. L3: first win, stars + coins. L5: Undo taught free. L7: designed near-loss, Extra Slot free once. L10 boss: Pongal kitchen, first album card (album UI ships in February). No interstitial before level 12 or after a fail. Notification permission asked after level 10.
+L1: one rule, "Match 3!", hand pointer. L2: hidden layer, no text. L11: locked shelf, one short line. Each tutorial runs on first play and skips itself once completed; no Skip button, because each is only a move or two and skipping could miss the one rule a new player needs (Muthu, PR #59). The hand and arrow stay code-drawn placeholders until art briefs E7 (tutorial hand, plus a pressed version) and E8 (yellow curved arrow) are imported in Slice 4. Tutorial text is English at launch. L3: first win, stars + coins. L5: Undo taught free. L7: designed near-loss, Extra Slot free once. L10 boss: Pongal kitchen, first album card (album UI ships in February). No interstitial before level 12 or after a fail. Notification permission asked after level 10.
 
 ## Monetisation (launch build)
 AdMob rewarded (boosters, continue, double coins) and interstitial (from L12, max 1 per 3 min, never after a fail, off for payers). IAP via Unity IAP: Remove Ads ₹199/$2.99, starter pack ₹99/$1.99 (after L15), coin packs ₹79–₹799, continue 900 coins, Pongal festival pack ₹149/$3.99.

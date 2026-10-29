@@ -14,7 +14,7 @@ namespace Game.EditorTools
     /// line) for QA, with no recorder package. Must run in Play Mode: builds its own camera, board view, bootstrap and
     /// <see cref="TutorialDirector"/> rendering into a texture, freezes game time and steps the board and the cue by
     /// hand so every frame is exact. Moves go through the board (the input layer is covered by the Play Mode tests).
-    /// Call <see cref="CaptureAll"/> through Unity MCP while playing; frames can be joined into a GIF with ffmpeg.
+    /// Call <see cref="CaptureAll"/> through Unity MCP while playing; raw frames go under frames/ (git-ignored) and can be joined into a GIF with ffmpeg.
     /// </summary>
     public static class TutorialCapture
     {
@@ -64,7 +64,7 @@ namespace Game.EditorTools
                 }
 
                 // L1 sequence: two hand loops, the guided move and its clear, then free play (no cue).
-                string l1 = Path.Combine(outputDir, "l1_frames");
+                string l1 = Path.Combine(outputDir, "frames", "l1");
                 Directory.CreateDirectory(l1);
                 using (var rig = new Rig(540, 1200, "w1_l001"))
                 {
@@ -79,7 +79,7 @@ namespace Game.EditorTools
                 }
 
                 // L2 sequence: the arrow bobbing over the hidden row, then the clear that reveals it, and the arrow gone.
-                string l2 = Path.Combine(outputDir, "l2_frames");
+                string l2 = Path.Combine(outputDir, "frames", "l2");
                 Directory.CreateDirectory(l2);
                 using (var rig = new Rig(540, 1200, "w1_l002"))
                 {
