@@ -160,7 +160,8 @@ namespace Game.EditorTools
 
         /// <summary>
         /// The Fail panel ("Out of space!", issue #41) over <see cref="StuckBoard"/> after its losing move, at 1080x1920
-        /// and 1080x2400 (safe area as in <see cref="CaptureResultPanelScreenshots"/>), into <paramref name="outputDir"/>.
+        /// and 1080x2400 (safe area as in <see cref="CaptureResultPanelScreenshots"/>), plus a 1080x1920 variant with the
+        /// hidden rewarded Continue forced on, into <paramref name="outputDir"/>.
         /// </summary>
         public static List<string> CaptureFailPanelScreenshots(string outputDir)
         {
@@ -178,6 +179,15 @@ namespace Game.EditorTools
                 string path = Path.Combine(outputDir, $"fail_panel_{size.x}x{size.y}.png");
                 written.Add(Capture(failed, size.x, size.y, path, view => view.CompleteAnimations(), ResultPanel.Fail, SafeAreaFor(size)));
             }
+
+            // QA only: the rewarded Continue ("Free Extra Slot") is hidden in the game until Slice 6; show it here so
+            // the layout can be reviewed.
+            var preview = StuckBoard();
+            preview.TryMove(1, 0, 0);
+            var previewSize = ScreenshotSizes[0];
+            string previewPath = Path.Combine(outputDir, $"fail_panel_with_continue_{previewSize.x}x{previewSize.y}.png");
+            written.Add(Capture(preview, previewSize.x, previewSize.y, previewPath, view => view.CompleteAnimations(),
+                ResultPanel.Fail, SafeAreaFor(previewSize), panels => panels.ShowContinueForPreview(true)));
             return written;
         }
 
@@ -455,7 +465,7 @@ namespace Game.EditorTools
 
         /// <summary>Renders <paramref name="board"/> at <paramref name="width"/>x<paramref name="height"/> into a PNG at <paramref name="path"/>.</summary>
         public static string Capture(Board board, int width, int height, string path, System.Action<BoardView> beforeRender = null,
-            ResultPanel panel = ResultPanel.None, Rect? safeArea = null)
+            ResultPanel panel = ResultPanel.None, Rect? safeArea = null, System.Action<ResultPanels> panelSetup = null)
         {
             var safe = safeArea ?? new Rect(0, 0, width, height);
             var target = new RenderTexture(width, height, 24, RenderTextureFormat.ARGB32);
@@ -475,6 +485,7 @@ namespace Game.EditorTools
                     panels.Build(camera, false);
                     panels.Layout(safe, ScreenshotDensity);
                     panels.Show(panel);
+                    panelSetup?.Invoke(panels);
                     Canvas.ForceUpdateCanvases();
                 }
                 camera.Render();

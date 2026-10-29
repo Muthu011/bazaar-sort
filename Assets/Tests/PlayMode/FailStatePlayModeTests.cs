@@ -178,6 +178,7 @@ namespace Game.Tests.PlayMode
             Assert.IsTrue(_panels.FailRetryButton.gameObject.activeInHierarchy, "Retry shows.");
             Assert.AreEqual("Retry", _panels.FailRetryButton.GetComponentInChildren<Text>(true).text);
             Assert.IsNotNull(_panels.FailContinueButton, "The Continue button exists.");
+            Assert.AreEqual("Free Extra Slot", _panels.FailContinueButton.GetComponentInChildren<Text>(true).text);
             Assert.IsFalse(_panels.FailContinueButton.gameObject.activeSelf, "Continue is hidden for now.");
             Assert.IsFalse(_panels.IsContinueVisible);
             Assert.AreEqual(0, _panels.FailContinueButton.onClick.GetPersistentEventCount(), "Continue has no persistent wiring.");
@@ -216,6 +217,94 @@ namespace Game.Tests.PlayMode
 
             yield return Click(Tile(1, 0));
             Assert.AreEqual(1, _view.SelectedShelf, "Input works after Retry.");
+        }
+
+        [UnityTest]
+        public IEnumerator FailCard_WithContinueShown_PutsFreeExtraSlotOnTop_AsTheMainButton_AndRetrySecondary()
+        {
+            const int width = 1080;
+            const int height = 1920;
+            const float density = 3f;
+            var target = new RenderTexture(width, height, 24);
+            _camera.targetTexture = target;
+            var safe = new Rect(0, 0, width, height);
+
+            _panelsObject = new GameObject("Result Panels");
+            _panels = _panelsObject.AddComponent<ResultPanels>();
+            _panels.Build(_camera, false);
+            _panels.Layout(safe, density);
+            _panels.Show(ResultPanel.Fail);
+            yield return null;
+            Canvas.ForceUpdateCanvases();
+
+            var retry = (RectTransform)_panels.FailRetryButton.transform;
+            var cont = (RectTransform)_panels.FailContinueButton.transform;
+            var retryImage = (Image)_panels.FailRetryButton.targetGraphic;
+            var contImage = (Image)_panels.FailContinueButton.targetGraphic;
+
+            // Hidden (the game today): Retry alone, main style, straight under the title.
+            Assert.IsFalse(_panels.IsContinueVisible);
+            Color mainColor = retryImage.color;
+            float retryAloneY = retry.anchoredPosition.y;
+            float aloneCardHeight = _panels.FailCard.sizeDelta.y;
+            Assert.AreEqual(ResultPanelLayout.ButtonHeightDp, retry.sizeDelta.y, 0.01f);
+
+            _panels.ShowContinueForPreview(true);
+            Canvas.ForceUpdateCanvases();
+            Assert.IsTrue(_panels.IsContinueVisible);
+
+            // Order: Continue above Retry, and larger.
+            Assert.Greater(cont.anchoredPosition.y, retry.anchoredPosition.y, "Free Extra Slot sits above Retry.");
+            Assert.Greater(cont.sizeDelta.y, retry.sizeDelta.y, "Free Extra Slot is the larger button.");
+            Assert.AreEqual(ResultPanelLayout.LeadButtonHeightDp, cont.sizeDelta.y, 0.01f);
+            Assert.Greater(_panels.FailCard.sizeDelta.y, aloneCardHeight, "The card grows to fit both.");
+
+            // Label and video icon.
+            var label = _panels.FailContinueButton.GetComponentInChildren<Text>(true);
+            Assert.AreEqual("Free Extra Slot", label.text);
+            var icon = _panels.FailVideoIcon;
+            Assert.IsNotNull(icon, "Video icon exists.");
+            Assert.IsTrue(icon.gameObject.activeInHierarchy, "Video icon shows with the button.");
+            Assert.AreSame(cont, icon.parent, "Icon sits on the Free Extra Slot button.");
+            Assert.IsNotNull(icon.GetComponentInChildren<Image>(), "Icon is drawn.");
+            Assert.AreEqual(2, icon.GetComponentsInChildren<Image>().Length, "Rounded frame plus play triangle.");
+            float textLeft = label.rectTransform.anchoredPosition.x - label.preferredWidth * 0.5f;
+            Assert.LessOrEqual(icon.anchoredPosition.x + ResultPanels.VideoIconWidthDp * 0.5f, textLeft + 0.5f,
+                "Icon sits left of the text, beside it.");
+
+            // Styles: Continue takes the main style; Retry turns secondary.
+            Assert.AreEqual(mainColor, contImage.color, "Free Extra Slot is the main (primary) button.");
+            Assert.AreNotEqual(mainColor, retryImage.color, "Retry is the secondary style.");
+            Assert.AreEqual(new Color32(0x00, 0x83, 0x8F, 0xFF), (Color32)retryImage.color, "Retry uses the secondary teal.");
+
+            // Both stay inside the safe area with touch-size buttons.
+            foreach (var rect in new[] { _panels.FailCard, cont, retry })
+            {
+                var r = ScreenRect(rect);
+                Assert.GreaterOrEqual(r.yMin, safe.yMin - 0.5f, rect.name);
+                Assert.LessOrEqual(r.yMax, safe.yMax + 0.5f, rect.name);
+                Assert.GreaterOrEqual(r.height / density, 48f - 0.01f, rect.name);
+            }
+
+            // Hidden again: back to Retry alone in the main style, same place as before.
+            _panels.ShowContinueForPreview(false);
+            Canvas.ForceUpdateCanvases();
+            Assert.AreEqual(mainColor, retryImage.color);
+            Assert.AreEqual(retryAloneY, retry.anchoredPosition.y, 0.01f);
+            Assert.AreEqual(aloneCardHeight, _panels.FailCard.sizeDelta.y, 0.01f);
+
+            _camera.targetTexture = null;
+            target.Release();
+            Object.Destroy(target);
+        }
+
+        private Rect ScreenRect(RectTransform rect)
+        {
+            var corners = new Vector3[4];
+            rect.GetWorldCorners(corners);
+            Vector2 min = RectTransformUtility.WorldToScreenPoint(_camera, corners[0]);
+            Vector2 max = RectTransformUtility.WorldToScreenPoint(_camera, corners[2]);
+            return Rect.MinMaxRect(min.x, min.y, max.x, max.y);
         }
 
         [UnityTest]

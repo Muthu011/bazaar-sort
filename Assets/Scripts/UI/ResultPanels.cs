@@ -9,7 +9,7 @@ using UnityEngine.UI;
 namespace Game.UI
 {
     /// <summary>
-    /// The placeholder Win panel (Next, Retry), Fail panel ("Out of space!", Retry) and More-levels-soon panel (Replay), built from code with uGUI on a screen-space
+    /// The placeholder Win panel (Next, Retry), Fail panel ("Out of space!", Free Extra Slot, Retry) and More-levels-soon panel (Replay), built from code with uGUI on a screen-space
     /// camera canvas over the board. The canvas works in dp (constant pixel size, scale factor = screen density), so
     /// <see cref="ResultPanelLayout"/> sizes come out the same on every phone, and the cards sit inside the safe area.
     ///
@@ -27,13 +27,17 @@ namespace Game.UI
     ///
     /// Fail (issue #41): shown on <see cref="BoardOutcome.Failed"/>. Retry reloads the level and nothing else happens:
     /// no interstitial and no penalty after a fail (docs/game-design.md). The card also holds a rewarded-ad Continue
+    /// ("Free Extra Slot" with a video mark, Muthu on PR #51): the main, taller button above Retry, which then turns
+    /// into the smaller secondary button. Until Slice 6 Continue is hidden and wired to nothing; Retry alone is the
+    /// main button and the card is sized for it. <see cref="ShowContinueForPreview"/> shows it for screenshots and tests.
     /// button for Slice 6; it is hidden and wired to nothing, and the card is sized for Retry alone until it shows.
     /// </summary>
     public sealed class ResultPanels : MonoBehaviour
     {
         internal const string WinTitle = "Cleared!";
         internal const string FailTitle = "Out of space!";
-        internal const string ContinueLabel = "Continue";
+        // Final wording of the rewarded button is checked in Slice 6, when the ad is wired (docs/game-design.md, Fail).
+        internal const string ContinueLabel = "Free Extra Slot";
         internal const string NextLabel = "Next";
         internal const string RetryLabel = "Retry";
         internal const string MoreLevelsTitle = "More levels coming soon";
@@ -45,12 +49,15 @@ namespace Game.UI
 
         private const int CanvasSortingOrder = 100;
 
-        /// <summary>Fail card buttons: Retry first, under the title; the hidden Continue below it.</summary>
-        private const int FailRetryIndex = 0;
-        private const int FailContinueIndex = 1;
+        /// <summary>Fail card buttons, top to bottom: the rewarded Continue (main, hidden until Slice 6), then Retry.</summary>
+        private const int FailContinueIndex = 0;
+        private const int FailRetryIndex = 1;
 
-        /// <summary>Buttons the Fail card is sized for: Retry only while Continue is hidden (Slice 6 makes it 2).</summary>
-        private const int FailVisibleButtons = 1;
+        /// <summary>The video mark beside the Continue label, in dp: a rounded rect with a play triangle inside.</summary>
+        internal const float VideoIconWidthDp = 28f;
+        internal const float VideoIconHeightDp = 20f;
+        internal const float VideoIconGapDp = 10f;
+        private const float VideoPlayDp = 12f;
 
         /// <summary>Confetti draws over the result card (100), under the dev overlay (110).</summary>
         private const int ConfettiSortingOrder = 105;
@@ -75,6 +82,11 @@ namespace Game.UI
         private GameObject _backdrop;
         private Card _win;
         private Card _fail;
+        private RectTransform _videoIcon;
+        private RectTransform _continueLabel;
+        private Text _continueText;
+        private Rect _layoutSafeAreaPx;
+        private float _layoutDensity = 1f;
         private Card _moreLevels;
         private bool _built;
         private Sequence _stars;
@@ -169,9 +181,10 @@ namespace Game.UI
             _win.SetButton(0, NextLabel, PrimaryColor, PrimaryText, OnNext);
             _win.SetButton(1, RetryLabel, SecondaryColor, SecondaryText, OnRetry);
             _fail = new Card(_safeArea, "Fail Panel", FailTitle, font, 2);
-            _fail.SetButton(FailRetryIndex, RetryLabel, PrimaryColor, PrimaryText, OnRetry);
             // Rewarded-ad continue arrives in Slice 6: built now so the card has its place, hidden and wired to nothing.
-            _fail.SetButton(FailContinueIndex, ContinueLabel, SecondaryColor, SecondaryText, null);
+            _fail.SetButton(FailContinueIndex, ContinueLabel, PrimaryColor, PrimaryText, null);
+            _fail.SetButton(FailRetryIndex, RetryLabel, PrimaryColor, PrimaryText, OnRetry);
+            BuildVideoIcon(_fail.Buttons[FailContinueIndex]);
             _fail.Buttons[FailContinueIndex].gameObject.SetActive(false);
             _moreLevels = new Card(_safeArea, "More Levels Panel", MoreLevelsTitleLines, font, 1);
             _moreLevels.SetButton(0, ReplayLabel, PrimaryColor, PrimaryText, OnReplay);
@@ -227,7 +240,9 @@ namespace Game.UI
 
             var safeDp = new Vector2(safeAreaPx.width / density, safeAreaPx.height / density);
             _win.Apply(ResultPanelLayout.Compute(safeDp, 2, 1, ResultPanelLayout.StarRowDp));
-            _fail.Apply(ResultPanelLayout.Compute(safeDp, FailVisibleButtons));
+            _layoutSafeAreaPx = safeAreaPx;
+            _layoutDensity = density;
+            ApplyFailLayout(safeDp);
             _moreLevels.Apply(ResultPanelLayout.Compute(safeDp, 1, MoreLevelsTitleLineCount));
         }
 
@@ -253,6 +268,71 @@ namespace Game.UI
             if (panel == ResultPanel.Win) PlayStars();
             else if (_stars != null) _stars.Pause();
             if (panel == ResultPanel.MoreLevelsSoon) PlayConfetti();
+        }
+
+        // ---- Fail card (issue #41) ----
+
+        private bool ContinueShown => _fail.Buttons[FailContinueIndex].gameObject.activeSelf;
+
+        /// <summary>
+        /// Sizes the Fail card for the buttons on show. Continue hidden: Retry alone, as the main button. Continue shown:
+        /// Continue on top as the taller main button, Retry under it in the smaller secondary style.
+        /// </summary>
+        private void ApplyFailLayout(Vector2 safeDp)
+        {
+            bool withContinue = ContinueShown;
+            var retry = _fail.Buttons[FailRetryIndex];
+            ((Image)retry.targetGraphic).color = withContinue ? SecondaryColor : PrimaryColor;
+            retry.GetComponentInChildren<Text>(true).color = withContinue ? SecondaryText : PrimaryText;
+            _fail.Apply(withContinue
+                ? ResultPanelLayout.Compute(safeDp, 2, leadButton: true)
+                : ResultPanelLayout.Compute(safeDp, 1));
+            if (withContinue) LayoutVideoIcon();
+        }
+
+        /// <summary>
+        /// The video mark: a rounded rect in the label colour with a marigold play triangle, beside the label. Drawn
+        /// from code (<see cref="PlaceholderSprites"/>), no icon asset.
+        /// </summary>
+        private void BuildVideoIcon(Button button)
+        {
+            _continueText = button.GetComponentInChildren<Text>(true);
+            _continueLabel = _continueText.rectTransform;
+            var frame = UiParts.Image(button.transform, "Video Icon", PrimaryText, PlaceholderSprites.RoundedSquare);
+            frame.raycastTarget = false;
+            frame.pixelsPerUnitMultiplier = 4f;
+            _videoIcon = frame.rectTransform;
+            _videoIcon.anchorMin = _videoIcon.anchorMax = new Vector2(0.5f, 0.5f);
+            _videoIcon.sizeDelta = new Vector2(VideoIconWidthDp, VideoIconHeightDp);
+            var play = UiParts.Image(_videoIcon, "Play", PrimaryColor, PlaceholderSprites.PlayTriangle, sliced: false);
+            play.raycastTarget = false;
+            var playRect = play.rectTransform;
+            playRect.anchorMin = playRect.anchorMax = new Vector2(0.5f, 0.5f);
+            playRect.sizeDelta = new Vector2(VideoPlayDp, VideoPlayDp);
+            playRect.anchoredPosition = new Vector2(1f, 0f);
+        }
+
+        /// <summary>Centres icon + gap + label as one group on the button.</summary>
+        private void LayoutVideoIcon()
+        {
+            float text = _continueText.preferredWidth;
+            float group = VideoIconWidthDp + VideoIconGapDp + text;
+            float shift = (VideoIconWidthDp + VideoIconGapDp) * 0.5f;
+            _continueLabel.offsetMin = new Vector2(shift, 0f);
+            _continueLabel.offsetMax = new Vector2(shift, 0f);
+            _videoIcon.anchoredPosition = new Vector2(-group * 0.5f + VideoIconWidthDp * 0.5f, 0f);
+        }
+
+        /// <summary>
+        /// Shows or hides the rewarded Continue and lays the card out again. QA and test hook only: the game keeps it
+        /// hidden until Slice 6.
+        /// </summary>
+        internal void ShowContinueForPreview(bool shown)
+        {
+            if (!_built) return;
+            _fail.Buttons[FailContinueIndex].gameObject.SetActive(shown);
+            float density = Mathf.Max(0.5f, _layoutDensity);
+            ApplyFailLayout(new Vector2(_layoutSafeAreaPx.width / density, _layoutSafeAreaPx.height / density));
         }
 
         // ---- Stars and confetti (issue #21) ----
@@ -385,6 +465,7 @@ namespace Game.UI
         internal RectTransform WinCard => _win.Rect;
         internal RectTransform FailCard => _fail.Rect;
         internal Text FailTitleLabel => _fail.Title;
+        internal RectTransform FailVideoIcon => _videoIcon;
         internal Canvas Canvas => _canvas;
 
         /// <summary>Win card stars (always <see cref="UiFeel.WinStars"/>).</summary>
@@ -578,11 +659,15 @@ namespace Game.UI
                 _title.sizeDelta = new Vector2(metrics.Card.x - 2f * metrics.Padding, metrics.TitleHeight);
                 _title.anchoredPosition = metrics.TitleCentre;
                 if (_starRow != null) _starRow.anchoredPosition = metrics.StarRowCentre;
+                // Hidden buttons take no place: the shown ones stack from the top (Fail card while Continue is hidden).
+                int slot = 0;
                 for (int i = 0; i < Buttons.Length; i++)
                 {
+                    if (!Buttons[i].gameObject.activeSelf) continue;
                     var rect = (RectTransform)Buttons[i].transform;
-                    rect.sizeDelta = metrics.Button;
-                    rect.anchoredPosition = metrics.ButtonCentre(i);
+                    rect.sizeDelta = metrics.ButtonSize(slot);
+                    rect.anchoredPosition = metrics.ButtonCentre(slot);
+                    slot++;
                 }
             }
         }

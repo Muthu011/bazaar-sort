@@ -100,6 +100,58 @@ namespace Game.Tests.EditMode
             }
         }
 
+        // ---- Lead button: the Fail card's rewarded Continue above Retry (issue #41) ----
+
+        [Test]
+        public void WithoutLeadButton_EveryButtonIsTheSameSize([Values(1, 2)] int buttons)
+        {
+            var m = ResultPanelLayout.Compute(new Vector2(360f, 640f), buttons);
+            Assert.AreEqual(m.Button, m.LeadButton);
+            Assert.AreEqual(m.Button, m.ButtonSize(0));
+        }
+
+        [Test]
+        public void LeadButton_IsTallerThanTheOthers_AndOnTop()
+        {
+            var m = ResultPanelLayout.Compute(new Vector2(360f, 640f), 2, leadButton: true);
+            Assert.AreEqual(ResultPanelLayout.LeadButtonHeightDp, m.LeadButton.y, 0.001f);
+            Assert.AreEqual(ResultPanelLayout.ButtonHeightDp, m.Button.y, 0.001f);
+            Assert.Greater(m.ButtonSize(0).y, m.ButtonSize(1).y, "The main button is larger.");
+            Assert.AreEqual(m.Button.x, m.LeadButton.x, "Same width.");
+            Assert.Greater(m.ButtonCentre(0).y, m.ButtonCentre(1).y, "The main button is on top.");
+
+            var plain = ResultPanelLayout.Compute(new Vector2(360f, 640f), 2);
+            Assert.AreEqual(plain.Card.y + ResultPanelLayout.LeadButtonHeightDp - ResultPanelLayout.ButtonHeightDp, m.Card.y,
+                0.001f, "The card grows by the extra height.");
+        }
+
+        [Test]
+        public void LeadButton_StacksInsideTheCard_WithoutOverlap_OnEveryPhone()
+        {
+            foreach (var safe in SafeAreas)
+            {
+                var m = ResultPanelLayout.Compute(safe, 2, leadButton: true);
+                float half = m.Card.y * 0.5f;
+                var lead = m.ButtonCentre(0);
+                var second = m.ButtonCentre(1);
+                Assert.LessOrEqual(lead.y + m.LeadButton.y * 0.5f, m.TitleCentre.y - m.TitleHeight * 0.5f + 0.001f, $"{safe}: under the title");
+                Assert.LessOrEqual(second.y + m.Button.y * 0.5f, lead.y - m.LeadButton.y * 0.5f - m.ButtonGap + 0.001f, $"{safe}: gap, no overlap");
+                Assert.GreaterOrEqual(second.y - m.Button.y * 0.5f, -half + m.Padding - 0.001f, $"{safe}: inside the card bottom");
+                Assert.LessOrEqual(m.Card.y, safe.y - 2f * ResultPanelLayout.MarginDp + 0.001f, $"{safe}: card fits");
+                Assert.GreaterOrEqual(m.Button.y, ResultPanelLayout.MinTouchDp, $"{safe}: touch floor");
+                Assert.GreaterOrEqual(m.LeadButton.y, m.Button.y, $"{safe}: lead never smaller");
+            }
+        }
+
+        [Test]
+        public void ShortSafeArea_GivesUpTheLeadButtonsExtraHeight_BeforeTheTouchFloor()
+        {
+            var m = ResultPanelLayout.Compute(new Vector2(640f, 250f), 2, leadButton: true);
+            Assert.GreaterOrEqual(m.Button.y, ResultPanelLayout.MinTouchDp);
+            Assert.GreaterOrEqual(m.LeadButton.y, m.Button.y);
+            Assert.Less(m.LeadButton.y, ResultPanelLayout.LeadButtonHeightDp, "Lead shrinks on a short screen.");
+        }
+
         [Test]
         public void SafeAreaAnchors_AreFractionsOfTheScreen()
         {
