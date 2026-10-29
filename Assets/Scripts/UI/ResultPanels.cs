@@ -24,6 +24,14 @@ namespace Game.UI
     /// (<see cref="LevelBootstrap.LastWinStars"/>, issue #44; all three when no level list is wired) in marigold, the
     /// rest as dim empty stars,
     /// then confetti falls (<see cref="ParticleFx.CreateConfetti"/>); More-levels-soon, also a win, gets the confetti.
+    /// The empty-star colour <c>#D7CCC8</c> is a placeholder until the Slice 4 art pass.
+    ///
+    /// Coins (issue #44, Muthu on PR #63): under the stars a "+N" line with a coin (<see cref="WinCoinsText"/>) shows the
+    /// coins this win earned (<see cref="LevelBootstrap.LastWinCoins"/>); a replay that earned 0 has no line and the card
+    /// is as tall as before. With the HUD wired (<see cref="Configure"/>), the card holds those coins back from the HUD
+    /// pill the moment they are saved (<see cref="LevelBootstrap.WinRewarded"/>), and when the stars have landed they fly
+    /// from the line into the pill, which counts up as they land (<see cref="GameHud.FlyWinCoins"/>). Any other panel,
+    /// or hiding the card, shows the full balance at once.
     /// The star drop is one DOTween sequence built once and restarted on every Win; outside play mode (screenshots)
     /// the stars just show at rest.
     ///
@@ -65,7 +73,8 @@ namespace Game.UI
         private const int ConfettiSortingOrder = 105;
 
         private static readonly Color32 StarColor = new Color32(0xFF, 0xB3, 0x00, 0xFF); // marigold
-        private static readonly Color32 StarEmptyColor = new Color32(0xD7, 0xCC, 0xC8, 0xFF); // placeholder: pale clay
+        // PLACEHOLDER until the Slice 4 art pass (docs/game-design.md, Stars and coins): pale clay for an unearned star.
+        private static readonly Color32 StarEmptyColor = new Color32(0xD7, 0xCC, 0xC8, 0xFF);
 
         private static readonly Color32 BackdropColor = new Color32(0x1B, 0x0F, 0x0C, 0xB0);
         private static readonly Color32 CardColor = new Color32(0xFF, 0xF8, 0xE1, 0xFF);
@@ -78,6 +87,7 @@ namespace Game.UI
         [SerializeField] private BoardView _view;
         [SerializeField] private LevelBootstrap _levels;
         [SerializeField] private Camera _camera;
+        [SerializeField] private GameHud _hud;
 
         private Canvas _canvas;
         private CanvasScaler _scaler;
@@ -91,10 +101,14 @@ namespace Game.UI
         private Rect _layoutSafeAreaPx;
         private float _layoutDensity = 1f;
         private Card _moreLevels;
+        private RectTransform _coinLine;
+        private Text _coinLineText;
+        private RectTransform _coinLineIcon;
+        private Vector2 _layoutSafeDp;
+        private TweenCallback _starsLanded;
         private bool _built;
         private Sequence _stars;
         private ParticleSystem _confetti;
-        private TweenCallback _playConfetti;
         private int _confettiBursts;
         private BoardView _subscribedView;
         private LevelBootstrap _subscribedLevels;
@@ -112,13 +126,17 @@ namespace Game.UI
         /// <summary>Replay on More-levels-soon was tapped (after <see cref="LevelBootstrap.ReplayFromFirst"/> ran, if wired).</summary>
         public event Action ReplayClicked;
 
-        /// <summary>Wires the view, level list and camera from code (scene builder, tests).</summary>
-        public void Configure(BoardView view, LevelBootstrap levels, Camera viewCamera)
+        /// <summary>
+        /// Wires the view, level list and camera from code (scene builder, tests), and the HUD whose coin pill the Win
+        /// card's coins fly into (null: no flight, the pill shows a win's coins at once).
+        /// </summary>
+        public void Configure(BoardView view, LevelBootstrap levels, Camera viewCamera, GameHud hud = null)
         {
             Unsubscribe();
             _view = view;
             _levels = levels;
             _camera = viewCamera;
+            _hud = hud;
             if (isActiveAndEnabled) Subscribe();
         }
 
@@ -183,6 +201,7 @@ namespace Game.UI
             _win = new Card(_safeArea, "Win Panel", WinTitle, font, 2, UiFeel.WinStars);
             _win.SetButton(0, NextLabel, PrimaryColor, PrimaryText, OnNext);
             _win.SetButton(1, RetryLabel, SecondaryColor, SecondaryText, OnRetry);
+            BuildCoinLine(font);
             _fail = new Card(_safeArea, "Fail Panel", FailTitle, font, 2);
             // Rewarded-ad continue arrives in Slice 6: built now so the card has its place, hidden and wired to nothing.
             _fail.SetButton(FailContinueIndex, ContinueLabel, PrimaryColor, PrimaryText, null);
@@ -242,7 +261,8 @@ namespace Game.UI
             _safeArea.offsetMax = Vector2.zero;
 
             var safeDp = new Vector2(safeAreaPx.width / density, safeAreaPx.height / density);
-            _win.Apply(ResultPanelLayout.Compute(safeDp, 2, 1, ResultPanelLayout.StarRowDp));
+            _layoutSafeDp = safeDp;
+            ApplyWinLayout();
             _layoutSafeAreaPx = safeAreaPx;
             _layoutDensity = density;
             ApplyFailLayout(safeDp);
@@ -271,9 +291,15 @@ namespace Game.UI
             if (panel == ResultPanel.Win)
             {
                 _win.SetEarnedStars(EarnedStars, StarColor, StarEmptyColor);
+                ShowCoinLine(EarnedCoins);
                 PlayStars();
             }
-            else if (_stars != null) _stars.Pause();
+            else
+            {
+                if (_stars != null) _stars.Pause();
+                // No coin line on this panel: whatever the pill held back shows at once.
+                if (_hud != null) _hud.ReleaseWinCoins();
+            }
             if (panel == ResultPanel.MoreLevelsSoon) PlayConfetti();
         }
 
@@ -342,6 +368,80 @@ namespace Game.UI
             ApplyFailLayout(new Vector2(_layoutSafeAreaPx.width / density, _layoutSafeAreaPx.height / density));
         }
 
+        // ---- Coin line (issue #44, PR #63) ----
+
+        private void BuildCoinLine(Font font)
+        {
+            _coinLine = new GameObject("Coin Line", typeof(RectTransform)).GetComponent<RectTransform>();
+            _coinLine.SetParent(_win.Rect, false);
+            _coinLine.anchorMin = _coinLine.anchorMax = new Vector2(0.5f, 0.5f);
+            _coinLineText = CreateText(_coinLine, "Coins Earned", font, string.Empty, ResultPanelLayout.CoinLineFontDp, TitleColor);
+            var textRect = _coinLineText.rectTransform;
+            textRect.anchorMin = textRect.anchorMax = new Vector2(0.5f, 0.5f);
+            var icon = UiParts.Image(_coinLine, "Coin", Color.white, PlaceholderSprites.Coin, sliced: false);
+            icon.raycastTarget = false;
+            _coinLineIcon = icon.rectTransform;
+            _coinLineIcon.anchorMin = _coinLineIcon.anchorMax = new Vector2(0.5f, 0.5f);
+            _coinLineIcon.sizeDelta = new Vector2(ResultPanelLayout.CoinLineIconDp, ResultPanelLayout.CoinLineIconDp);
+            _coinLine.gameObject.SetActive(false);
+        }
+
+        /// <summary>"+N" and a coin, centred as one group, for <paramref name="coins"/>; hidden for 0. Once per Win.</summary>
+        private void ShowCoinLine(int coins)
+        {
+            bool shown = WinCoinsText.IsShown(coins);
+            _coinLine.gameObject.SetActive(shown);
+            if (shown)
+            {
+                _coinLineText.text = WinCoinsText.For(coins);
+                float text = _coinLineText.preferredWidth;
+                float group = text + ResultPanelLayout.CoinLineGapDp + ResultPanelLayout.CoinLineIconDp;
+                var textRect = _coinLineText.rectTransform;
+                textRect.sizeDelta = new Vector2(text, ResultPanelLayout.CoinLineDp);
+                textRect.anchoredPosition = new Vector2(-group * 0.5f + text * 0.5f, 0f);
+                _coinLineIcon.anchoredPosition = new Vector2(group * 0.5f - ResultPanelLayout.CoinLineIconDp * 0.5f, 0f);
+            }
+            ApplyWinLayout();
+        }
+
+        /// <summary>The Win card for the last layout, with the coin line's band only while the line is shown.</summary>
+        private void ApplyWinLayout()
+        {
+            if (_win == null) return;
+            bool coinLine = _coinLine != null && _coinLine.gameObject.activeSelf;
+            var metrics = ResultPanelLayout.Compute(_layoutSafeDp, 2, 1, ResultPanelLayout.WinRowDp(coinLine));
+            _win.Apply(metrics);
+            _win.PlaceStarRow(ResultPanelLayout.WinStarsCentre(metrics));
+            if (_coinLine != null)
+            {
+                _coinLine.sizeDelta = new Vector2(metrics.Card.x - 2f * metrics.Padding, ResultPanelLayout.CoinLineDp);
+                _coinLine.anchoredPosition = ResultPanelLayout.WinCoinLineCentre(metrics);
+            }
+        }
+
+        /// <summary>The stars have landed: the line's coins fly into the HUD pill (or show there at once).</summary>
+        private void PayOutCoins()
+        {
+            if (_hud == null) return;
+            if (!_coinLine.gameObject.activeInHierarchy)
+            {
+                _hud.ReleaseWinCoins();
+                return;
+            }
+            _hud.FlyWinCoins(RectTransformUtility.WorldToScreenPoint(_camera, _coinLineIcon.position));
+        }
+
+        private void OnStarsLanded()
+        {
+            PlayConfetti();
+            PayOutCoins();
+        }
+
+        private void OnWinRewarded(int stars, int coins)
+        {
+            if (_hud != null) _hud.HoldWinCoins(coins);
+        }
+
         // ---- Stars and confetti (issue #21) ----
 
         private void BuildFeel()
@@ -349,7 +449,7 @@ namespace Game.UI
             _win.ShowStarsAtRest();
             if (!Tweens.IsReady) return;
 
-            _playConfetti = PlayConfetti;
+            _starsLanded = OnStarsLanded;
             _confetti = ParticleFx.CreateConfetti("Win Confetti", ConfettiSortingOrder);
             _confetti.transform.SetParent(transform, false);
 
@@ -364,7 +464,7 @@ namespace Game.UI
                 _stars.Insert(start + UiFeel.StarDropSeconds,
                     rect.DOPunchScale(new Vector3(UiFeel.StarPunch, UiFeel.StarPunch, 0f), UiFeel.StarPunchSeconds, 6, 0.5f));
             }
-            _stars.InsertCallback(UiFeel.StarsSeconds, _playConfetti);
+            _stars.InsertCallback(UiFeel.StarsSeconds, _starsLanded);
         }
 
         private void PlayStars()
@@ -372,6 +472,7 @@ namespace Game.UI
             if (_stars == null)
             {
                 _win.ShowStarsAtRest();
+                PayOutCoins();
                 return;
             }
             _win.PrepareStarDrop();
@@ -418,6 +519,7 @@ namespace Game.UI
             {
                 _subscribedLevels.LevelLoaded += OnLevelLoaded;
                 _subscribedLevels.AllLevelsCleared += OnAllLevelsCleared;
+                _subscribedLevels.WinRewarded += OnWinRewarded;
             }
         }
 
@@ -428,6 +530,7 @@ namespace Game.UI
             {
                 _subscribedLevels.LevelLoaded -= OnLevelLoaded;
                 _subscribedLevels.AllLevelsCleared -= OnAllLevelsCleared;
+                _subscribedLevels.WinRewarded -= OnWinRewarded;
             }
             _subscribedView = null;
             _subscribedLevels = null;
@@ -477,6 +580,17 @@ namespace Game.UI
 
         /// <summary>Stars to light on the Win card: the bootstrap's last win, or all of them without one.</summary>
         private int EarnedStars => _levels != null && _levels.LastWinStars > 0 ? _levels.LastWinStars : UiFeel.WinStars;
+
+        /// <summary>Coins the Win card shows: the bootstrap's last win, or 0.</summary>
+        private int EarnedCoins => _levels != null ? _levels.LastWinCoins : 0;
+
+        /// <summary>The "+N" line, and whether it is on the card.</summary>
+        internal Text WinCoinsLabel => _coinLineText;
+        internal bool IsWinCoinsLineVisible => IsWinVisible && _coinLine.gameObject.activeSelf;
+        internal RectTransform WinCoinsIcon => _coinLineIcon;
+
+        /// <summary>Shows the coin line for <paramref name="coins"/> without a win (screenshots).</summary>
+        internal void ShowCoinsForPreview(int coins) => ShowCoinLine(coins);
 
         /// <summary>Win card star slots (always <see cref="UiFeel.WinStars"/>).</summary>
         internal Image[] WinStars => _win.Stars;
@@ -632,6 +746,12 @@ namespace Game.UI
             {
                 float step = ResultPanelLayout.StarDp + ResultPanelLayout.StarGapDp;
                 return new Vector2((index - (Stars.Length - 1) * 0.5f) * step, 0f);
+            }
+
+            /// <summary>Moves the star row to <paramref name="centre"/> (the Win card puts it at the top of its band).</summary>
+            public void PlaceStarRow(Vector2 centre)
+            {
+                if (_starRow != null) _starRow.anchoredPosition = centre;
             }
 
             public void ShowStarsAtRest()

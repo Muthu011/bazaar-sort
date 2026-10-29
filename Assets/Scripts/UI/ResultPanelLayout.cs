@@ -98,6 +98,26 @@ namespace Game.UI
         public const float StarGapDp = 12f;
 
         /// <summary>
+        /// The Win card's coin line under the stars (issue #44, PR #63): "+N" and a coin, in this much height. Only there
+        /// when the win earned coins; without it the card is as before.
+        /// </summary>
+        public const float CoinLineDp = 40f;
+        public const int CoinLineFontDp = 28;
+        public const float CoinLineIconDp = 30f;
+        public const float CoinLineGapDp = 6f;
+
+        /// <summary>Height of the Win card's band under the title: the star row, plus the coin line when shown.</summary>
+        public static float WinRowDp(bool coinLine) => StarRowDp + (coinLine ? CoinLineDp : 0f);
+
+        /// <summary>Centre of the Win card's stars (the top <see cref="StarRowDp"/> of the band), relative to the card centre.</summary>
+        public static Vector2 WinStarsCentre(ResultPanelMetrics m) =>
+            new Vector2(0f, m.StarRowCentre.y + m.StarRow * 0.5f - StarRowDp * 0.5f);
+
+        /// <summary>Centre of the coin line (the bottom <see cref="CoinLineDp"/> of the band), relative to the card centre.</summary>
+        public static Vector2 WinCoinLineCentre(ResultPanelMetrics m) =>
+            new Vector2(0f, m.StarRowCentre.y - m.StarRow * 0.5f + CoinLineDp * 0.5f);
+
+        /// <summary>
         /// Card and button sizes for a safe area of <paramref name="safeSizeDp"/> with <paramref name="buttonCount"/>
         /// buttons and a title of <paramref name="titleLines"/> lines, with a star row of <paramref name="starRowDp"/>
         /// (0 for none) under the title. With <paramref name="leadButton"/> (and 2 or more buttons) button 0 is the
