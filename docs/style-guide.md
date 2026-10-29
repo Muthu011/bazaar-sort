@@ -5,7 +5,7 @@ The bullets below are the base rules. The sections after them add the World 1 lo
 - Look: warm premium 2.5D. Slightly isometric objects, soft top-left light, real materials (brass shine, stainless steel, terracotta, banana-leaf green, glass). Not cartoon clip art.
 - Palette: turmeric yellow, kumkum red, peacock blue, banana-leaf green, brass gold on warm cream. One accent colour per world.
 - Objects: 512 px source, transparent background, centred, same camera angle and light for every object. Each object must read in greyscale at 64 px with a unique silhouette.
-- Scenes: shelves belong to the setting (steel rack, chai kadai counter, bangle wall); backdrop softly blurred.
+- Scenes: shelves belong to the setting (World 1: a limewashed plank shelf in the kitchen; later worlds: chai kadai counter, bangle wall); backdrop softly blurred.
 - Effects on clear: themed and short (coffee steam, jasmine petals, diya sparkle), under 0.6 s.
 - UI: rounded cards, 48 px+ tap targets, icons and numbers over words.
 - Board touch areas: the 4–14 shelf layout is fixed. Item touch areas extend past the picture into the gaps between items and shelves to reach 48 dp where there's room. 44 dp is the floor on 720p phones. Levels 1 to 20 use at most 8 shelves.
@@ -14,7 +14,7 @@ The bullets below are the base rules. The sections after them add the World 1 lo
 
 ## World 1: Amma's Kitchen (look page, issue #24)
 
-Status: proposal for Muthu to react to with test art. Taste calls are listed in "Questions for Muthu" at the end of this section; the defaults below are used until Muthu answers.
+Status: Muthu decided the eight taste questions on 2026-10-29 (see "Decisions (Muthu, 2026-10-29)" at the end of this section). The look below follows those decisions.
 
 ### Mood
 - A warm Madurai home kitchen in the morning: limewashed cream wall, a plank shelf, brass and stainless steel catching a soft window light from the top left.
@@ -35,22 +35,23 @@ Sat = HSV saturation, Val = HSV value. Greyscale = approximate luma (0 black to 
 | Shelf front edge | Plank mid | #B88B5A | Front face of the plank |
 | Shelf underside | Plank dark | #8A5A33 | Underside and the soft shadow tint |
 | Shelf back panel | Lime panel | #F0DFC0 | Inset panel behind the items (items sit on this) |
-| Brass | Brass | #B8862B | Mid tone. Highlight #E8C46A, shadow #7A5416 |
-| Steel | Steel | #B9C2C6 | Mid tone. Highlight #F1F5F6, shadow #6F7B82 |
-| Iron | Iron black | #2A2A2E | Tawa. Never pure black. Highlight #55555C |
+| Brass | Brass | #D3A340 | Polished brass, mid tone. Highlight #F3DC95, shadow #8A5F1A. Also the padlock and coin |
+| Steel | Steel | #B3BDC2 | Mid tone. Highlight #F1F5F6, shadow #6F7B82 |
+| Iron | Iron black | #1A1A1E | Tawa, greyscale 0.10. Never pure black. Highlight #4A4A52 |
 | Accent (World 1) | Turmeric | #F2B632 | The one World 1 accent: HUD highlights, star fill, active button |
 | Accent support | Kumkum red | #B3321F | Pressure cooker, warnings, fail panel |
-| Accent support | Peacock blue | #1F6F8B | Steel tiffin, links, info |
-| Accent support | Banana-leaf green | #4E9A5A | Rolling pin, success, win panel |
+| Accent support | Peacock blue | #247390 | Steel tiffin, links, info |
+| Accent support | Banana-leaf green | #5CA564 | Rolling pin handles, small success marks |
 | UI success dark | Leaf dark | #2E6F4E | Win panel fill (white text). Not used on objects |
-| Accent support | Jamun purple | #6B4A8A | Chai kettle |
-| Coconut wood | Coconut brown | #8A5A33 | Coconut scraper body |
+| Accent support | Spice yellow | #F2D268 | Spice bowls and tin highlights on `masala_dabba` (a lighter turmeric so it stays apart from brass) |
+| Accent support | Jamun purple | #432B63 | Chai kettle (deep enamel purple) |
+| Coconut wood | Coconut brown | #A9733D | Coconut scraper body |
 | Idli | Idli white | #F4EFE2 | Idlis. Slightly warm, never #FFFFFF |
 | UI card | Card cream | #FFF4DC | Panels, same as wall |
 | UI text | Roasted brown | #3B2418 | All text on cream and turmeric |
 | UI dark | Night slate | #2A3A44 | Dark overlays, scrim (use at 60% alpha) |
 | UI button | Turmeric | #F2B632 | Primary button fill, text Roasted brown |
-| UI button alt | Peacock blue | #1F6F8B | Secondary button fill, text white |
+| UI button alt | Peacock blue | #247390 | Secondary button fill, text white |
 
 Saturation and brightness limits ("bright but not neon"):
 - Fill colours: Sat 0.85 or lower, and Val 0.95 or lower for any colour that is not a highlight. No fill has two RGB channels at 255.
@@ -67,19 +68,21 @@ Contrast checks (WCAG 2.1, contrast ratio):
 | Roasted brown #3B2418 on Card cream #FFF4DC | 13.3 : 1 | AA and AAA |
 | Roasted brown on Sandstone #E9DCC3 | 10.7 : 1 | AA and AAA |
 | Roasted brown on Turmeric #F2B632 (button) | 7.9 : 1 | AA and AAA |
-| White on Peacock blue #1F6F8B (button) | 5.7 : 1 | AA (body text) |
+| White on Peacock blue #247390 (button) | 5.3 : 1 | AA (body text) |
 | White on Kumkum red #B3321F | 6.2 : 1 | AA |
 | White on Leaf dark #2E6F4E (text panels) | 6.0 : 1 | AA |
-| Roasted brown on Banana-leaf green #4E9A5A | 4.20 : 1 | Fails AA for normal text; large text (24 px+ or 19 px+ bold) and icons only (3 : 1) |
-| White on Banana-leaf green #4E9A5A | 3.45 : 1 | Large text and icons only |
+| Roasted brown on Banana-leaf green #5CA564 | 4.8 : 1 | AA (normal text) |
+| White on Banana-leaf green #5CA564 | 3.0 : 1 | Fails AA for normal text; never use |
+| Roasted brown on Brass #D3A340 (padlock and coin numbers) | 6.3 : 1 | AA |
+| Roasted brown on Spice yellow #F2D268 | 9.8 : 1 | AA and AAA |
 | White on Night slate #2A3A44 | 11.8 : 1 | AA and AAA |
 
-- Normal-size text never goes on the lighter #4E9A5A green (brown 4.20 : 1, white 3.45 : 1); use Leaf dark #2E6F4E with white there. White text never goes on Turmeric; use Roasted brown.
+- White text never goes on the lighter #5CA564 green (3.0 : 1); use Roasted brown there (4.8 : 1) or Leaf dark #2E6F4E with white. White text never goes on Turmeric; use Roasted brown.
 - Numbers (moves, coins, padlock count) are 20 dp or larger, bold, and always use the ratios above. Large text needs 3 : 1, but we aim for AA body text everywhere.
 - Re-check any new text and background pair with a WCAG contrast calculator before it ships.
 
 Colour-blind note:
-- Never use colour alone for meaning. The seven main object colours are separated by silhouette and by lightness as well as hue; the red/green pair (cooker #B3321F, rolling pin #4E9A5A) differ in lightness (greyscale 0.30 against 0.50) and silhouette (squat pot against long bar).
+- Never use colour alone for meaning. All ten objects are separated by lightness (every pair at least 0.08 apart in greyscale, see the readability table), by silhouette and by hue. The red/green pair (cooker #B3321F, rolling pin #5CA564) differ in lightness (greyscale 0.30 against 0.57) and silhouette (squat pot against long bar); the dark purple kettle and blue tiffin are also 0.19 apart in greyscale.
 - Win/fail panels pair colour with an icon (star row for win, retry arrow for fail), and the padlock shows a number.
 - Check the final art with a simulator for red-green (deuteranopia) and blue-yellow (tritanopia) as well as greyscale.
 
@@ -136,29 +139,50 @@ All PNG, RGBA, transparent background unless marked, sRGB. "Display" is at 1080 
 | Star | 256 x 256 | 156 px (52 dp) | Filled Turmeric star with warm highlight. An empty version in Sandstone with a Plank mid edge, same size |
 | Icons (pause, sound, retry) | 128 x 128 each | 72 px (24 dp) | Roasted brown, simple, not in this issue's scope; listed for later |
 
+#### Packing and compression (defaults for the import task, to be confirmed there)
+- Objects, shelf, padlock, coin and star are packed in a Unity Sprite Atlas (`com.unity.2d.sprite`, built in), one atlas per world for the objects and one for shared UI. Background and 9-slice panels stay as separate textures.
+- Android compression is ASTC. Default block size 6x6 for objects (soft shaded art hides the blocks) and 4x4 for UI (button, pill, panel edges, padlock, coin, star), where sharp edges matter more than size.
+- Atlas max size 2048 x 2048, padding 4 px, no rotation, mipmaps on for objects, off for UI. Ten 512 px objects fit in one 2048 x 2048 page with room to spare; the 1808 x 826 shelf goes in the UI atlas or its own page.
+- These are defaults, not decisions. The import task checks the result on a device and may change block size or atlas size, and records the build size change.
+
 ### Readability rules
 1. Each object must be recognisable at 48 dp. That is 144 px at xxhdpi, 96 px at xhdpi (720 x 1600).
 2. Silhouette: each object has a unique outline when filled solid black. No two objects may share an overall shape (tall cylinder, round pot, long bar, flat disc with a handle).
 3. Main colour: each object has one main colour from the table below covering at least 50% of its visible area. Details use the same material's highlight and shadow.
 4. Fill the frame: the object fills at least 80% of the 464 px safe box in its longer dimension.
-5. Greyscale test: convert the 512 px art to greyscale, shrink to 64 px. Objects must be told apart by outline plus lightness. Where two objects have similar greyscale (see below), the silhouette must differ clearly.
+5. Greyscale test: convert the 512 px art to greyscale, shrink to 64 px. Objects must be told apart by outline plus lightness. Every pair of main colours is at least 0.08 apart in greyscale (luma = 0.2126 R + 0.7152 G + 0.0722 B on the sRGB values, 0 to 1); keep to that when matching real art. The silhouette must differ clearly.
 6. 48 dp thumbnail check Muthu can do: shrink each image to 144 x 144 (and 96 x 96), put all 10 on a cream #FFF4DC strip in a row, view them on a phone at normal arm's length, or at 100% zoom on a computer. Cover the names. If any object takes more than a second to name, or two are confused, fail it and note which pair.
 7. A mix of 3 shelves of 3 items each must not look like the same blob: look at silhouettes only (all black) as well as the colour version.
 
 | Object | Silhouette notes | Main colour (palette) | Greyscale | Most similar object and what separates them |
 | --- | --- | --- | --- | --- |
-| tumbler | Tall, slightly flared cup standing in a wide flat saucer (dabara); taller than wide, with a wide foot. No handle | Steel #B9C2C6 | 0.75 | `steel_tiffin`: tiffin is three stacked tiers with a wire clip arching over the top and is peacock blue; tumbler has the flared saucer base, one smooth tier and is silver. `brass_kudam`: kudam has a round belly and a narrow neck, tumbler has straight sides |
+| tumbler | Tall, slightly flared cup standing in a wide flat saucer (dabara); taller than wide, with a wide foot. No handle | Steel #B3BDC2 | 0.73 | `steel_tiffin`: tiffin is three stacked tiers with a wire clip arching over the top and is peacock blue; tumbler has the flared saucer base, one smooth tier and is silver. `brass_kudam`: kudam has a round belly and a narrow neck, tumbler has straight sides |
 | pressure_cooker | Squat wide pot, two short side handles, domed lid with a small weight on top | Kumkum red #B3321F | 0.30 | `brass_kudam` (also round-ish): cooker is wider than tall with side handles and a top knob and is red; kudam is taller than wide with a narrow neck and no handles |
 | idli_stand | Tall column of 3 to 4 round plates with scalloped edges and a centre post, pale idlis in the holes | Idli white #F4EFE2 (steel frame) | 0.94 | `steel_tiffin`: both stacked. Idli stand shows holes and scalloped plate edges and is the lightest object; tiffin has smooth ring tiers and a clip handle and is mid-dark blue |
-| tawa | Flat disc with one long handle sticking out to the right, seen from above at the shared angle (an ellipse with a stick) | Iron black #2A2A2E | 0.17 | `coconut_scraper`: scraper is a low wooden stool with legs and a jagged round blade on one end, brown; tawa is the darkest object, round with one straight handle and no legs or teeth |
-| masala_dabba | Wide round tin, seen slightly from above with the lid open: a ring of small round bowls of spice inside, a small spoon | Turmeric #F2B632 (spices) in a steel tin | 0.73 | `brass_kudam` (both warm yellow): dabba is wide and low with a bowl ring on top and is bright yellow; kudam is tall and round with a neck and is darker brass (greyscale 0.54, keep it at least 0.15 darker than the dabba) |
-| steel_tiffin | Three stacked tiers with a wire clip handle arching over the top; rounder at the bottom edge | Peacock blue #1F6F8B (painted tiers) | 0.38 | `tumbler` (see above) and `idli_stand` (see above) |
-| coconut_scraper | Low, long horizontal wooden stool with a round serrated blade on one end, short legs | Coconut brown #8A5A33 | 0.38 | `tawa`: described above. `rolling_pin`: pin is a smooth bar with two knobs at 30 degrees, green; scraper is low with legs and teeth, brown |
-| brass_kudam | Round-bellied water pot, narrow neck, wide flared rim, slight foot, plain | Brass #B8862B | 0.54 | `tumbler` and `masala_dabba` (above). Kudam must have no markings: it is an everyday water pot |
-| rolling_pin | Long bar with two end knobs, turned about 30 degrees so it fills the square | Banana-leaf green #4E9A5A (lacquered handles, pale wood roller) | 0.50 | `coconut_scraper` (above). Also keep it thicker than a real pin so it does not shrink to a line at 48 dp |
-| chai_kettle | Pot-bellied body with a long curved spout on one side, a high arched handle, small knob on the lid | Jamun purple #6B4A8A (enamel) | 0.34 | `pressure_cooker`: kettle has the long spout, arched handle and is purple; cooker is squat with two short handles and is red. In greyscale these two are close (0.30 and 0.34), so the spout and handle must stay bold |
+| tawa | Flat disc with one long handle sticking out to the right, seen from above at the shared angle (an ellipse with a stick) | Iron black #1A1A1E | 0.10 | `coconut_scraper`: scraper is a low wooden stool with legs and a jagged round blade on one end, brown; tawa is the darkest object, round with one straight handle and no legs or teeth |
+| masala_dabba | Wide round tin, seen slightly from above with the lid open: a ring of small round bowls of spice inside, a small spoon | Spice yellow #F2D268 (spices) in a steel tin | 0.82 | `brass_kudam` (both warm yellow): dabba is wide and low with a bowl ring on top and is bright yellow; kudam is tall and round with a neck and is darker polished brass (greyscale 0.65 against the dabba's 0.82) |
+| steel_tiffin | Three stacked tiers with a wire clip handle arching over the top; rounder at the bottom edge | Peacock blue #247390 (painted tiers) | 0.39 | `tumbler` (see above) and `idli_stand` (see above) |
+| coconut_scraper | Low, long horizontal wooden stool with a round serrated blade on one end, short legs | Coconut brown #8A5A33 | 0.48 | `tawa`: described above. `rolling_pin`: pin is a smooth bar with two knobs at 30 degrees, green; scraper is low with legs and teeth, brown |
+| brass_kudam | Round-bellied water pot, narrow neck, wide flared rim, slight foot, plain | Brass #D3A340 | 0.65 | `tumbler` and `masala_dabba` (above). Kudam must have no markings: it is an everyday water pot |
+| rolling_pin | Long bar with two end knobs, turned about 30 degrees so it fills the square | Banana-leaf green #5CA564 (lacquered handles, pale wood roller) | 0.57 | `coconut_scraper` (above). Also keep it thicker than a real pin so it does not shrink to a line at 48 dp |
+| chai_kettle | Pot-bellied body with a long curved spout on one side, a high arched handle, small knob on the lid | Jamun purple #432B63 (enamel) | 0.20 | `pressure_cooker`: kettle has the long spout, arched handle and is purple; cooker is squat with two short handles and is red. In greyscale these two are close (0.30 and 0.34), so the spout and handle must stay bold |
 
-Greyscale pairs that rely on silhouette: `steel_tiffin`, `coconut_scraper`, `chai_kettle`, `pressure_cooker` (all 0.30 to 0.38), and `rolling_pin` (0.50) with `brass_kudam` (0.54). The rolling pin is a long thin bar and the kudam a round pot, so the silhouette must carry that pair. These must be flagged again when the real art arrives; if any pair is confused at 64 px, change the object's lightness rather than adding detail.
+Greyscale near-ties: resolved. Muthu asked for this to be fixed now (2026-10-29). Threshold: every pair of the 10 main colours is at least 0.08 apart in luma (0.2126 R + 0.7152 G + 0.0722 B on sRGB values, 0 to 1). Sorted, darkest to lightest:
+
+| Object | Hex | Luma | Gap to the next darker |
+| --- | --- | --- | --- |
+| tawa | #1A1A1E | 0.103 | none |
+| chai_kettle | #432B63 | 0.204 | 0.101 |
+| pressure_cooker | #B3321F | 0.298 | 0.094 |
+| steel_tiffin | #247390 | 0.393 | 0.095 |
+| coconut_scraper | #A9733D | 0.481 | 0.088 |
+| rolling_pin | #5CA564 | 0.568 | 0.087 |
+| brass_kudam | #D3A340 | 0.651 | 0.083 |
+| tumbler | #B3BDC2 | 0.734 | 0.083 |
+| masala_dabba | #F2D268 | 0.820 | 0.086 |
+| idli_stand | #F4EFE2 | 0.938 | 0.118 |
+
+The smallest gap is 0.083. The Greyscale column in the table above shows these values rounded to two places. When the real art arrives, measure the average luma of each object's main colour; if a pair drops under 0.08, change that object's lightness, not its detail. Silhouettes still do the main work; the lightness gaps are a second, colour-blind-safe cue. Saturation and value limits are kept: the highest value among fills is #F2D268 at 0.95, and the highest saturation is the cooker at 0.83.
 
 ### Prompts for the 10 objects
 These are tool-neutral text prompts. Use the shared style block with the object line. Generate on a plain light background and remove it by hand to get the transparent PNG, or ask the tool for a transparent background if it can.
@@ -173,28 +197,28 @@ Shared negative prompt (paste after every object line, or in the tool's negative
 
 Per-object lines (main colour from the palette; use the hex in the prompt if the tool understands it, otherwise the colour name):
 
-1. `tumbler`: "A South Indian filter coffee tumbler and dabara set: a tall slightly flared stainless steel tumbler standing inside a wide shallow steel saucer (dabara). Cool steel #B9C2C6 with soft white highlights. Plain, no handle, no markings."
+1. `tumbler`: "A South Indian filter coffee tumbler and dabara set: a tall slightly flared stainless steel tumbler standing inside a wide shallow steel saucer (dabara). Cool steel #B3BDC2 (light grey) with soft white highlights. Plain, no handle, no markings."
 2. `pressure_cooker`: "A squat round Indian pressure cooker in kumkum red enamel #B3321F, with a domed lid, a small steel weight on top, and two short black side handles. Wider than tall. Plain, no markings."
 3. `idli_stand`: "A stainless steel idli stand: a tall stack of three or four round plates with scalloped edges held on a centre post, each plate holding pale warm white idlis (#F4EFE2) in round holes. Steel frame, no food garnish, no steam, no plate or chutney."
-4. `tawa`: "A flat round Indian cast iron tawa in matte iron black #2A2A2E, seen from slightly above, with one long straight handle sticking out to the right. Thick rim, a faint soft highlight only. Nothing on the tawa."
-5. `masala_dabba`: "A round stainless steel masala dabba spice tin, lid off or open, seen slightly from above, showing a ring of seven small round bowls filled with bright turmeric yellow #F2B632 and warm spice colours, with a small steel spoon. Wide and low."
-6. `steel_tiffin`: "A three-tier Indian tiffin carrier: three stacked round tiers painted peacock blue #1F6F8B with steel rims, held by a wire clip handle that arches over the top. Taller than wide. Plain, no markings."
+4. `tawa`: "A flat round Indian cast iron tawa in matte iron black #1A1A1E, seen from slightly above, with one long straight handle sticking out to the right. Thick rim, a faint soft highlight only. Nothing on the tawa."
+5. `masala_dabba`: "A round stainless steel masala dabba spice tin, lid off or open, seen slightly from above, showing a ring of seven small round bowls filled with light spice yellow #F2D268 and warm spice colours, with a small steel spoon. Wide and low."
+6. `steel_tiffin`: "A three-tier Indian tiffin carrier: three stacked round tiers painted peacock blue #247390 with steel rims, held by a wire clip handle that arches over the top. Taller than wide. Plain, no markings."
 7. `coconut_scraper`: "A traditional Indian coconut scraper (thengai thirugi): a low long wooden stool in coconut brown #8A5A33 with short legs and a round serrated steel blade fixed on one end. No coconut, no bowl."
-8. `brass_kudam`: "A plain everyday brass water pot (kudam): a round-bellied pot with a narrow neck, a wide flared rim and a small foot, in warm brass #B8862B with soft golden highlights and faint wear. Completely plain: no pattern, no markings, no flowers, no coconut, no leaves, no cloth, no religious decoration. Taller than wide."
-9. `rolling_pin`: "An Indian rolling pin (belan): a smooth pale wooden roller with two thick end handles lacquered banana-leaf green #4E9A5A, turned about 30 degrees so it fills the square frame. Chunky proportions, plain, no markings."
-10. `chai_kettle`: "A pot-bellied Indian chai kettle in jamun purple enamel #6B4A8A with a long curved spout on the left, a high arched handle, a lid with a small round knob, and a steel rim. Plain, no markings, no steam."
+8. `brass_kudam`: "A plain everyday brass water pot (kudam): a round-bellied pot with a narrow neck, a wide flared rim and a small foot, in warm brass #D3A340 with soft golden highlights and faint wear. Completely plain: no pattern, no markings, no flowers, no coconut, no leaves, no cloth, no religious decoration. Taller than wide."
+9. `rolling_pin`: "An Indian rolling pin (belan): a smooth pale wooden roller with two thick end handles lacquered banana-leaf green #5CA564, turned about 30 degrees so it fills the square frame. Chunky proportions, plain, no markings."
+10. `chai_kettle`: "A pot-bellied Indian chai kettle in jamun purple enamel #432B63 with a long curved spout on the left, a high arched handle, a lid with a small round knob, and a steel rim. Plain, no markings, no steam."
 
 Prompt consistency check when images come back: same light direction, same camera angle, same scale of detail, same edge treatment. Regenerate rather than paint over when the angle or light is off.
 
 ### Logging approved art
 When Muthu makes or approves an image, append one row per file to `docs/art-provenance.csv` (columns: `file, source_tool, prompt_ref, edited_by, approved_by, date`). Example shape: `Assets/Art/Objects/world1/tumbler.png, <tool name and version>, docs/style-guide.md#prompts-for-the-10-objects (tumbler), <who edited by hand>, Muthu, <yyyy-mm-dd>`. Only tools listed in `docs/approved-dependencies.md` may be used. No rows are added in this issue.
 
-### Questions for Muthu
-1. Pressure cooker colour: kumkum red enamel (default, keeps hue variety) or classic plain steel (more authentic, but conflicts with tumbler and tiffin)?
-2. Steel tiffin and chai kettle: peacock blue and jamun purple painted/enamel finish (default, for readability) or all plain steel?
-3. Rolling pin: green lacquered handles (default) or fully wooden (authentic, but near the coconut scraper's brown)?
-4. Shelf: pale limewashed wooden plank (default) or a steel rack as the older style bullet says?
-5. Is turmeric yellow #F2B632 the right single World 1 accent, or would you prefer kumkum red?
-6. Brass kudam: confirm a bare brass pot with no cloth, coconut or decoration is acceptable (default: bare).
-7. Should the greyscale near-ties (tiffin, scraper, kettle, cooker) be fixed in the art now, or only if the 64 px test fails?
-8. Sizes: are 2x-of-largest-display (512 px objects, 1808 x 826 shelf) fine for the Android build size, or do you want smaller sources?
+### Decisions (Muthu, 2026-10-29)
+1. Pressure cooker: red enamel. Reason: a steel cooker would blur into the tumbler, tiffin and dabba.
+2. Tiffin and kettle: painted enamel in two different colours, neither red (peacock blue #247390 for the tiffin, deep jamun purple #432B63 for the kettle). Reason: same as above. The kettle is not green because green is the rolling pin.
+3. Rolling pin: green lacquered handles on a pale wood roller. Reason: all wood would look too close to the coconut scraper.
+4. Shelf: limewashed wooden plank (this replaces the old "steel rack" wording for World 1). Reason: warmer, and a steel rack would put more grey behind grey objects.
+5. World 1 accent: turmeric #F2B632. Reason: kumkum red would fight the red cooker, and turmeric fits Pongal.
+6. Brass kudam: bare brass, no cloth, coconut or decoration. Reason: a clean silhouette reads best. A decorated Pongal kudam is saved for the L10 boss or a later festival event; either way it carries no religious markings and follows the religious-items rules in `CLAUDE.md`.
+7. Greyscale near-ties: fix now in the palette. Reason: it helps colour-blind players. Done in the readability section above (every pair at least 0.08 apart).
+8. Source sizes: 2x of the largest display size (512 px objects, 1808 x 826 shelf) are fine. Reason: ten 512 px objects plus one shelf is small. Atlas and compression defaults are in the asset section.
