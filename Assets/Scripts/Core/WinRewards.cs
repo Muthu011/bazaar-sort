@@ -12,8 +12,11 @@ namespace Game.Core
     /// <item>A level with no known minimum (minMoves missing, 0 or negative: a level the solver has not stamped, e.g.
     /// a test board) gives <see cref="MaxStars"/>: the player is never marked down against a number that doesn't
     /// exist. Shipped levels always have one (LevelPackTests).</item>
-    /// <item>Coins: <see cref="CoinsPerWin"/> per win plus <see cref="CoinsPerExtraStar"/> per star above 1, so 10,
-    /// 15 or 20.</item>
+    /// <item>Coins (Muthu, PR #63; amounts from <see cref="RewardConfig"/>): the first win of a level pays
+    /// <see cref="RewardConfig.FirstWinCoins"/> plus <see cref="RewardConfig.CoinsPerExtraStar"/> per star above 1, so
+    /// 10, 15 or 20. A replay (the level was won before) pays <see cref="RewardConfig.CoinsPerExtraStar"/> per star above
+    /// the previous best, otherwise 0. So a level never pays more in total than a 3-star first win: 1 star (10) then a
+    /// 3-star replay (+10) is 20.</item>
     /// <item>Spending: a price can be paid only when the balance covers it; the balance never goes below 0.</item>
     /// </list>
     /// </summary>
@@ -31,9 +34,6 @@ namespace Game.Core
         /// <summary>Shared denominator of the two star factors.</summary>
         public const int StarDenominator = 2;
 
-        public const int CoinsPerWin = 10;
-        public const int CoinsPerExtraStar = 5;
-
         /// <summary>Stars for a win in <paramref name="moves"/> moves on a level whose shortest win is <paramref name="minMoves"/>.</summary>
         public static int StarsFor(int moves, int minMoves)
         {
@@ -44,11 +44,18 @@ namespace Game.Core
             return 1;
         }
 
-        /// <summary>Coins a win with <paramref name="stars"/> stars earns (stars are clamped to 1..3).</summary>
-        public static int CoinsForWin(int stars)
+        /// <summary>
+        /// Coins a win with <paramref name="stars"/> stars earns on a level whose best stars before this win were
+        /// <paramref name="previousBestStars"/> (0 = never won: a first win). Stars are clamped to 1..3, the previous best
+        /// to 0..3. <paramref name="config"/> null means <see cref="RewardConfig.Default"/>.
+        /// </summary>
+        public static int CoinsForWin(int stars, int previousBestStars, RewardConfig config = null)
         {
+            config ??= RewardConfig.Default;
             int clamped = Math.Min(MaxStars, Math.Max(MinStars, stars));
-            return CoinsPerWin + CoinsPerExtraStar * (clamped - MinStars);
+            int previous = Math.Min(MaxStars, Math.Max(0, previousBestStars));
+            if (previous == 0) return config.FirstWinCoins + config.CoinsPerExtraStar * (clamped - MinStars);
+            return config.CoinsPerExtraStar * Math.Max(0, clamped - previous);
         }
 
         /// <summary>True when <paramref name="balance"/> covers <paramref name="price"/> (a price of 0 always does).</summary>

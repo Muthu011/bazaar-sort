@@ -81,21 +81,93 @@ namespace Game.Tests.EditMode
             }
         }
 
-        // ---- Coins ----
+        // ---- Coins: first win (Muthu, PR #63) ----
 
         [TestCase(1, 10)]
         [TestCase(2, 15)]
         [TestCase(3, 20)]
-        public void Coins_Are10PerWinPlus5PerStarAbove1(int stars, int expected)
+        public void FirstWin_Pays10PlusFivePerStarAbove1(int stars, int expected)
         {
-            Assert.AreEqual(expected, WinRewards.CoinsForWin(stars));
+            Assert.AreEqual(expected, WinRewards.CoinsForWin(stars, 0));
         }
 
         [Test]
-        public void Coins_ClampOutOfRangeStars()
+        public void FirstWin_ClampsOutOfRangeStars()
         {
-            Assert.AreEqual(10, WinRewards.CoinsForWin(0));
-            Assert.AreEqual(20, WinRewards.CoinsForWin(9));
+            Assert.AreEqual(10, WinRewards.CoinsForWin(0, 0));
+            Assert.AreEqual(20, WinRewards.CoinsForWin(9, 0));
+            Assert.AreEqual(10, WinRewards.CoinsForWin(1, -2), "A negative previous best is a first win.");
+        }
+
+        // ---- Coins: replays ----
+
+        [TestCase(1, 1, 0, TestName = "Replay_SameStars_1_Pays0")]
+        [TestCase(2, 2, 0, TestName = "Replay_SameStars_2_Pays0")]
+        [TestCase(3, 3, 0, TestName = "Replay_SameStars_3_Pays0")]
+        [TestCase(3, 1, 0, TestName = "Replay_Fewer_3then1_Pays0")]
+        [TestCase(3, 2, 0, TestName = "Replay_Fewer_3then2_Pays0")]
+        [TestCase(2, 1, 0, TestName = "Replay_Fewer_2then1_Pays0")]
+        [TestCase(1, 2, 5, TestName = "Replay_More_1then2_Pays5")]
+        [TestCase(2, 3, 5, TestName = "Replay_More_2then3_Pays5")]
+        [TestCase(1, 3, 10, TestName = "Replay_More_1then3_Pays10")]
+        public void Replay_PaysFivePerStarAboveThePreviousBest(int previousBest, int stars, int expected)
+        {
+            Assert.AreEqual(expected, WinRewards.CoinsForWin(stars, previousBest));
+        }
+
+        [Test]
+        public void Replay_ClampsOutOfRangeStars()
+        {
+            Assert.AreEqual(10, WinRewards.CoinsForWin(9, 1), "9 stars count as 3.");
+            Assert.AreEqual(0, WinRewards.CoinsForWin(3, 9), "A previous best over 3 counts as 3.");
+            Assert.AreEqual(0, WinRewards.CoinsForWin(0, 1), "0 stars count as 1.");
+        }
+
+        [Test]
+        public void OneStarFirstWin_ThenThreeStarReplay_TotalsTheSameAsAThreeStarFirstWin()
+        {
+            int total = WinRewards.CoinsForWin(1, 0) + WinRewards.CoinsForWin(3, 1);
+            Assert.AreEqual(20, total);
+            Assert.AreEqual(WinRewards.CoinsForWin(3, 0), total);
+        }
+
+        [Test]
+        public void OneToThreeInSteps_TotalsTheSameAsAThreeStarFirstWin()
+        {
+            int first = WinRewards.CoinsForWin(1, 0);
+            int second = WinRewards.CoinsForWin(2, 1);
+            int third = WinRewards.CoinsForWin(3, 2);
+            Assert.AreEqual(new[] { 10, 5, 5 }, new[] { first, second, third });
+            Assert.AreEqual(20, first + second + third);
+        }
+
+        // ---- Coins: config ----
+
+        [Test]
+        public void DefaultConfig_IsTen_AndFivePerExtraStar()
+        {
+            Assert.AreEqual(10, RewardConfig.Default.FirstWinCoins);
+            Assert.AreEqual(5, RewardConfig.Default.CoinsPerExtraStar);
+            Assert.AreEqual(RewardConfig.DefaultFirstWinCoins, RewardConfig.Default.FirstWinCoins);
+            Assert.AreEqual(RewardConfig.DefaultCoinsPerExtraStar, RewardConfig.Default.CoinsPerExtraStar);
+        }
+
+        [Test]
+        public void Coins_ComeFromTheConfig_NotLiterals()
+        {
+            var config = new RewardConfig(25, 7);
+            Assert.AreEqual(25, WinRewards.CoinsForWin(1, 0, config), "First-win base from the config.");
+            Assert.AreEqual(25 + 14, WinRewards.CoinsForWin(3, 0, config), "Extra stars from the config.");
+            Assert.AreEqual(7, WinRewards.CoinsForWin(2, 1, config), "Replay steps from the config.");
+            Assert.AreEqual(0, WinRewards.CoinsForWin(2, 2, config));
+            Assert.AreEqual(WinRewards.CoinsForWin(3, 0, RewardConfig.Default), WinRewards.CoinsForWin(3, 0), "Null means Default.");
+        }
+
+        [Test]
+        public void Config_RefusesNegativeCoins()
+        {
+            Assert.Throws<ArgumentOutOfRangeException>(() => new RewardConfig(-1, 5));
+            Assert.Throws<ArgumentOutOfRangeException>(() => new RewardConfig(10, -1));
         }
 
         [Test]
