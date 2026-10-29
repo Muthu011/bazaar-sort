@@ -38,6 +38,13 @@ namespace Game.Services
             _progress = null;
         }
 
+        /// <summary>
+        /// The project enters play mode without a domain reload, so statics outlive a play session. Dropping the services
+        /// here makes every play session read the save from disk again, like a fresh app launch on the phone.
+        /// </summary>
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetOnPlay() => ResetToDefaults();
+
         private static IHapticDevice CreateDevice()
         {
 #if UNITY_ANDROID && !UNITY_EDITOR
