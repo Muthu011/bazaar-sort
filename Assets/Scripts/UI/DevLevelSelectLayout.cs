@@ -2,65 +2,106 @@ using UnityEngine;
 
 namespace Game.UI
 {
-    /// <summary>Sizes for the dev level select row and fps readout, in dp. See <see cref="DevLevelSelectLayout"/>.</summary>
+    /// <summary>Sizes for the dev level select, in dp. See <see cref="DevLevelSelectLayout"/>.</summary>
     public readonly struct DevLevelSelectMetrics
     {
-        public DevLevelSelectMetrics(Vector2 button, float gap, int count, float rowCentreFromTop, float topReserve,
-            float fpsCentreFromBottom)
+        public DevLevelSelectMetrics(Vector2 toggle, Vector2 toggleCentre, float topReserve, int count, int columns,
+            float cell, Vector2 card, Vector2 safeSize, Vector2 action, float fpsCentreFromBottom)
         {
-            Button = button;
-            Gap = gap;
-            Count = count;
-            RowCentreFromTop = rowCentreFromTop;
+            Toggle = toggle;
+            ToggleCentre = toggleCentre;
             TopReserve = topReserve;
+            Count = count;
+            Columns = columns;
+            Cell = cell;
+            Card = card;
+            SafeSize = safeSize;
+            Action = action;
             FpsCentreFromBottom = fpsCentreFromBottom;
         }
 
-        /// <summary>Size of one level button.</summary>
-        public Vector2 Button { get; }
+        /// <summary>The "Levels" button that opens the panel.</summary>
+        public Vector2 Toggle { get; }
 
-        public float Gap { get; }
-        public int Count { get; }
+        /// <summary>Toggle centre from the top-left corner of the safe area (x right, y up: y is negative).</summary>
+        public Vector2 ToggleCentre { get; }
 
-        /// <summary>Distance from the top of the safe area to the centre of the button row.</summary>
-        public float RowCentreFromTop { get; }
-
-        /// <summary>Height of the board's HUD reserve at the top of the safe area (the row lives in it).</summary>
+        /// <summary>Height of the board's HUD reserve at the top of the safe area (the toggle lives in it).</summary>
         public float TopReserve { get; }
+
+        public int Count { get; }
+        public int Columns { get; }
+        public int Rows => (Count + Columns - 1) / Columns;
+
+        /// <summary>Side of one square level cell.</summary>
+        public float Cell { get; }
+
+        public float Gap => DevLevelSelectLayout.GapDp;
+        public float Padding => DevLevelSelectLayout.CardPaddingDp;
+
+        /// <summary>Panel card size; the card is centred in the safe area.</summary>
+        public Vector2 Card { get; }
+
+        public Vector2 SafeSize { get; }
+
+        /// <summary>Size of each of the two bottom buttons (Reset progress, Close).</summary>
+        public Vector2 Action { get; }
 
         /// <summary>Distance from the bottom of the safe area to the centre of the fps readout.</summary>
         public float FpsCentreFromBottom { get; }
 
-        public float RowWidth => Count * Button.x + (Count - 1) * Gap;
+        public float GridWidth => Columns * Cell + (Columns - 1) * Gap;
+        public float GridHeight => Rows * Cell + (Rows - 1) * Gap;
 
-        /// <summary>Bottom edge of the button row, measured down from the top of the safe area.</summary>
-        public float RowBottomFromTop => RowCentreFromTop + Button.y * 0.5f;
+        /// <summary>True when the toggle sits entirely inside the top HUD reserve, clear of the shelves.</summary>
+        public bool ToggleFitsInReserve => -ToggleCentre.y + Toggle.y * 0.5f <= TopReserve + 0.001f;
 
-        /// <summary>True when the row sits entirely inside the top HUD reserve, clear of the board's playfield.</summary>
-        public bool FitsInReserve => RowBottomFromTop <= TopReserve + 0.001f;
+        /// <summary>True when the whole card fits inside the safe area.</summary>
+        public bool CardFitsSafeArea => Card.x <= SafeSize.x + 0.001f && Card.y <= SafeSize.y + 0.001f;
 
-        /// <summary>
-        /// Centre of button <paramref name="index"/> relative to the top-centre of the safe area (x right, y up).
-        /// </summary>
-        public Vector2 ButtonCentre(int index)
+        /// <summary>Title centre relative to the card centre.</summary>
+        public Vector2 TitleCentre => new Vector2(0f, Card.y * 0.5f - Padding - DevLevelSelectLayout.TitleHeightDp * 0.5f);
+
+        /// <summary>Centre of level cell <paramref name="index"/> relative to the card centre (row by row, left to right).</summary>
+        public Vector2 CellCentre(int index)
         {
-            float left = -RowWidth * 0.5f + Button.x * 0.5f;
-            return new Vector2(left + index * (Button.x + Gap), -RowCentreFromTop);
+            int row = index / Columns;
+            int column = index % Columns;
+            float left = -GridWidth * 0.5f + Cell * 0.5f;
+            float top = Card.y * 0.5f - Padding - DevLevelSelectLayout.TitleHeightDp - Gap - Cell * 0.5f;
+            return new Vector2(left + column * (Cell + Gap), top - row * (Cell + Gap));
+        }
+
+        /// <summary>Centre of bottom button <paramref name="index"/> (0 Reset progress, 1 Close) relative to the card centre.</summary>
+        public Vector2 ActionCentre(int index)
+        {
+            float y = -Card.y * 0.5f + Padding + Action.y * 0.5f;
+            float x = (index == 0 ? -1f : 1f) * (Action.x + Gap) * 0.5f;
+            return new Vector2(x, y);
         }
     }
 
     /// <summary>
-    /// Where the dev level select goes: one row of buttons centred in the board's top HUD reserve
-    /// (<c>BoardLayoutSettings.TopReserveFraction</c> of the safe area), so it never covers the shelves. Buttons
-    /// never go below the 48 dp touch floor. The fps readout sits in the bottom reserve. Pure math, Edit Mode tested.
+    /// Where the dev level select goes (development builds only, issue #22): a "Levels" button at the left of the
+    /// board's top HUD reserve (<c>BoardLayoutSettings.TopReserveFraction</c>), clear of the shelves and of the centred
+    /// status line, opens a card centred in the safe area with one square cell per level, up to
+    /// <see cref="MaxColumns"/> per row, and Reset progress / Close below. Every button is at least the 48 dp touch floor.
+    /// The fps readout sits in the bottom reserve. Pure math, Edit Mode tested.
     /// </summary>
     public static class DevLevelSelectLayout
     {
         public const float MinTouchDp = ResultPanelLayout.MinTouchDp;
-        public const float PreferredButtonWidthDp = 56f;
+        public const float MaxCellDp = 60f;
+        public const int MaxColumns = 5;
         public const float GapDp = 8f;
         public const float SideMarginDp = 16f;
+        public const float CardPaddingDp = 16f;
+        public const float TitleHeightDp = 32f;
+        public const float ToggleWidthDp = 72f;
+        public const float StarDp = 12f;
+        public const int TitleFontDp = 20;
         public const int LabelFontDp = 18;
+        public const int ActionFontDp = 15;
         public const int FpsFontDp = 14;
         public const float FpsHeightDp = 20f;
 
@@ -68,19 +109,34 @@ namespace Game.UI
             float bottomReserveFraction, int count)
         {
             if (count < 1) count = 1;
-            float available = Mathf.Max(0f, safeSizeDp.x - 2f * SideMarginDp - (count - 1) * GapDp);
-            float width = Mathf.Clamp(available / count, MinTouchDp, PreferredButtonWidthDp);
-            float height = MinTouchDp;
 
             float reserve = Mathf.Max(0f, safeSizeDp.y * topReserveFraction);
-            // Centre the row in the reserve; if the reserve is shorter than a button, keep the touch floor and pin
-            // the row to the top (FitsInReserve is then false; portrait phones have 64 dp or more).
-            float rowCentre = Mathf.Max(reserve * 0.5f, height * 0.5f);
+            var toggle = new Vector2(ToggleWidthDp, MinTouchDp);
+            // Centred in the reserve; on a reserve shorter than the toggle, keep the touch floor and pin it to the top.
+            float toggleY = Mathf.Max(reserve * 0.5f, toggle.y * 0.5f);
+            var toggleCentre = new Vector2(SideMarginDp + toggle.x * 0.5f, -toggleY);
+
+            // Grid: as many columns as fit at the touch floor (max MaxColumns), cells as big as fit (max MaxCellDp).
+            float inner = Mathf.Max(MinTouchDp, safeSizeDp.x - 2f * SideMarginDp - 2f * CardPaddingDp);
+            int columns = Mathf.Clamp(Mathf.FloorToInt((inner + GapDp) / (MinTouchDp + GapDp)), 1, MaxColumns);
+            columns = Mathf.Min(columns, count);
+            float cell = Mathf.Clamp((inner - (columns - 1) * GapDp) / columns, MinTouchDp, MaxCellDp);
+            int rows = (count + columns - 1) / columns;
+
+            float gridWidth = columns * cell + (columns - 1) * GapDp;
+            float gridHeight = rows * cell + (rows - 1) * GapDp;
+            // The bottom buttons need room for their labels even when the grid is narrow (few levels).
+            float contentWidth = Mathf.Max(gridWidth, 2f * 120f + GapDp);
+            contentWidth = Mathf.Min(contentWidth, inner);
+            var action = new Vector2((contentWidth - GapDp) * 0.5f, MinTouchDp);
+            var card = new Vector2(contentWidth + 2f * CardPaddingDp,
+                CardPaddingDp + TitleHeightDp + GapDp + gridHeight + 2f * GapDp + action.y + CardPaddingDp);
 
             float bottomReserve = Mathf.Max(0f, safeSizeDp.y * bottomReserveFraction);
             float fpsCentre = Mathf.Max(bottomReserve * 0.5f, FpsHeightDp * 0.5f);
 
-            return new DevLevelSelectMetrics(new Vector2(width, height), GapDp, count, rowCentre, reserve, fpsCentre);
+            return new DevLevelSelectMetrics(toggle, toggleCentre, reserve, count, columns, cell, card, safeSizeDp,
+                action, fpsCentre);
         }
     }
 }

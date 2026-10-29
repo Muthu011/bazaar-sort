@@ -21,16 +21,6 @@ namespace Game.EditorTools
         public const string ScenePath = "Assets/Scenes/Game.unity";
         public const string DefaultLevelPath = "Assets/Levels/World1/w1_l001.json";
 
-        /// <summary>World 1 in play order: Next walks this list and loops after the last.</summary>
-        public static readonly string[] World1LevelPaths =
-        {
-            "Assets/Levels/World1/w1_l001.json",
-            "Assets/Levels/World1/w1_l002.json",
-            "Assets/Levels/World1/w1_l003.json",
-            "Assets/Levels/World1/w1_l004.json",
-            "Assets/Levels/World1/w1_l005.json",
-        };
-
         /// <summary>Pixels per dp used for screenshots: a 1080 px wide phone at 360 dp.</summary>
         public const float ScreenshotDensity = 3f;
 
@@ -40,15 +30,12 @@ namespace Game.EditorTools
         [MenuItem("Bazaar Sort/Build Game Scene")]
         public static void BuildGameScene()
         {
-            var levels = new TextAsset[World1LevelPaths.Length];
-            for (int i = 0; i < levels.Length; i++)
+            // Every level file, in play order, through the generated list (so new level files need no scene change).
+            var levels = LevelListSync.Sync();
+            if (levels == null || levels.Levels.Length == 0)
             {
-                levels[i] = AssetDatabase.LoadAssetAtPath<TextAsset>(World1LevelPaths[i]);
-                if (levels[i] == null)
-                {
-                    Debug.LogError($"GameSceneBuilder: level not found at {World1LevelPaths[i]}.");
-                    return;
-                }
+                Debug.LogError("GameSceneBuilder: no levels found under " + LevelListSync.LevelsRoot + ".");
+                return;
             }
 
             var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
@@ -67,7 +54,7 @@ namespace Game.EditorTools
 
             var bootstrapObject = new GameObject("Level Bootstrap");
             var bootstrap = bootstrapObject.AddComponent<LevelBootstrap>();
-            bootstrap.Configure(levels, view, camera);
+            bootstrap.Configure(levels, view, camera); // saved progress on: continue at the first unplayed level
             EditorUtility.SetDirty(bootstrap);
 
             var panelsObject = new GameObject("Result Panels");
@@ -212,19 +199,20 @@ namespace Game.EditorTools
         }
 
         /// <summary>
-        /// The dev level select (L1..L5, development builds only) over w1_l001 at 1080x2400 with the 20:9 safe area
-        /// (110 px cutout, 60 px gesture bar), into "dev_level_select_1080x2400.png". The fps readout shows "0 fps"
-        /// because a still frame has no frame history.
+        /// The dev level select (every level in the level list, development builds only) over w1_l001 at 1080x2400 with
+        /// the 20:9 safe area (110 px cutout, 60 px gesture bar), into "dev_level_select_1080x2400.png". With
+        /// <paramref name="open"/>, the level card is open, drawn from <paramref name="progress"/> (null: no progress).
+        /// The fps readout shows "0 fps" because a still frame has no frame history.
         /// </summary>
-        public static string CaptureDevLevelSelectScreenshot(string outputDir)
+        public static string CaptureDevLevelSelectScreenshot(string outputDir, bool open = false,
+            Game.Services.IProgressService progress = null, int currentIndex = 0)
         {
             Directory.CreateDirectory(outputDir);
-            var levels = new TextAsset[World1LevelPaths.Length];
-            for (int i = 0; i < levels.Length; i++) levels[i] = AssetDatabase.LoadAssetAtPath<TextAsset>(World1LevelPaths[i]);
+            var levels = LevelListSync.Sync().Levels;
 
             var size = ScreenshotSizes[1];
             var safe = SafeAreaFor(size);
-            string path = Path.Combine(outputDir, $"dev_level_select_{size.x}x{size.y}.png");
+            string path = Path.Combine(outputDir, open ? $"dev_level_select_open_{size.x}x{size.y}.png" : $"dev_level_select_{size.x}x{size.y}.png");
             var target = new RenderTexture(size.x, size.y, 24, RenderTextureFormat.ARGB32);
             var cameraObject = new GameObject("Screenshot Camera") { hideFlags = HideFlags.HideAndDontSave };
             var viewObject = new GameObject("Screenshot Board View") { hideFlags = HideFlags.HideAndDontSave };
@@ -237,12 +225,14 @@ namespace Game.EditorTools
                 var view = viewObject.AddComponent<BoardView>();
                 var bootstrap = viewObject.AddComponent<LevelBootstrap>();
                 bootstrap.Configure(levels, view, camera);
+                bootstrap.Progress = progress;
                 var overlay = overlayObject.AddComponent<DevOverlay>();
                 overlay.Configure(bootstrap, camera);
                 overlay.Build();
-                if (!bootstrap.LoadLevel(0)) return null;
+                if (!bootstrap.LoadLevel(currentIndex)) return null;
                 view.Bind(view.Board, camera, safe, BoardLayoutSettings.Default);
                 overlay.Layout(safe, ScreenshotDensity);
+                if (open) overlay.Open();
                 Canvas.ForceUpdateCanvases();
                 camera.Render();
 

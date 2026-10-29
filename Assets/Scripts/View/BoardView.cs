@@ -140,6 +140,7 @@ namespace Game.View
         private int _lockMotions;
         private BoardOutcome _pendingOutcome;
         private BoardOutcome _outcome;
+        private bool _inputHeld;
 
         /// <summary>
         /// Raised once per board, after Won or Stuck, when every clear and reveal animation has finished: the moment to
@@ -173,7 +174,19 @@ namespace Game.View
         public BoardOutcome Outcome => _outcome;
 
         /// <summary>True once the board is won or stuck: board input stops (the result panel takes over).</summary>
-        public bool InputLocked => _pendingOutcome != BoardOutcome.None || _outcome != BoardOutcome.None;
+        public bool InputLocked => _inputHeld || InputBlocked || _pendingOutcome != BoardOutcome.None || _outcome != BoardOutcome.None;
+
+        /// <summary>
+        /// Set by a screen that covers the board and owns the pointer while it is open (the dev level select). Unlike
+        /// <see cref="HoldInput"/>, it survives level loads; the screen clears it when it closes.
+        /// </summary>
+        public bool InputBlocked { get; set; }
+
+        /// <summary>
+        /// Stops board input until the next <see cref="Bind"/>: the board stays on screen under a panel that owns the
+        /// pointer ("More levels coming soon" when the game opens with every level won).
+        /// </summary>
+        public void HoldInput() => _inputHeld = true;
 
         /// <summary>
         /// Starts drawing <paramref name="board"/> through <paramref name="viewCamera"/>, laid out inside
@@ -249,6 +262,7 @@ namespace Game.View
             _lockMotions = 0;
             _pendingOutcome = BoardOutcome.None;
             _outcome = BoardOutcome.None;
+            _inputHeld = false;
         }
 
         /// <summary>
