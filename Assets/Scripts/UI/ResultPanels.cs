@@ -9,7 +9,7 @@ using UnityEngine.UI;
 namespace Game.UI
 {
     /// <summary>
-    /// The placeholder Win panel (Next, Retry), Stuck panel (Retry) and More-levels-soon panel (Replay), built from code with uGUI on a screen-space
+    /// The placeholder Win panel (Next, Retry), Fail panel ("Out of space!", Retry) and More-levels-soon panel (Replay), built from code with uGUI on a screen-space
     /// camera canvas over the board. The canvas works in dp (constant pixel size, scale factor = screen density), so
     /// <see cref="ResultPanelLayout"/> sizes come out the same on every phone, and the cards sit inside the safe area.
     ///
@@ -24,11 +24,16 @@ namespace Game.UI
     /// then confetti falls (<see cref="ParticleFx.CreateConfetti"/>); More-levels-soon, also a win, gets the confetti.
     /// The star drop is one DOTween sequence built once and restarted on every Win; outside play mode (screenshots)
     /// the stars just show at rest.
+    ///
+    /// Fail (issue #41): shown on <see cref="BoardOutcome.Failed"/>. Retry reloads the level and nothing else happens:
+    /// no interstitial and no penalty after a fail (docs/game-design.md). The card also holds a rewarded-ad Continue
+    /// button for Slice 6; it is hidden and wired to nothing, and the card is sized for Retry alone until it shows.
     /// </summary>
     public sealed class ResultPanels : MonoBehaviour
     {
         internal const string WinTitle = "Cleared!";
-        internal const string StuckTitle = "No moves left";
+        internal const string FailTitle = "Out of space!";
+        internal const string ContinueLabel = "Continue";
         internal const string NextLabel = "Next";
         internal const string RetryLabel = "Retry";
         internal const string MoreLevelsTitle = "More levels coming soon";
@@ -39,6 +44,13 @@ namespace Game.UI
         private const int MoreLevelsTitleLineCount = 2;
 
         private const int CanvasSortingOrder = 100;
+
+        /// <summary>Fail card buttons: Retry first, under the title; the hidden Continue below it.</summary>
+        private const int FailRetryIndex = 0;
+        private const int FailContinueIndex = 1;
+
+        /// <summary>Buttons the Fail card is sized for: Retry only while Continue is hidden (Slice 6 makes it 2).</summary>
+        private const int FailVisibleButtons = 1;
 
         /// <summary>Confetti draws over the result card (100), under the dev overlay (110).</summary>
         private const int ConfettiSortingOrder = 105;
@@ -62,7 +74,7 @@ namespace Game.UI
         private RectTransform _safeArea;
         private GameObject _backdrop;
         private Card _win;
-        private Card _stuck;
+        private Card _fail;
         private Card _moreLevels;
         private bool _built;
         private Sequence _stars;
@@ -96,7 +108,10 @@ namespace Game.UI
         }
 
         public bool IsWinVisible => _built && _win.Root.activeSelf;
-        public bool IsStuckVisible => _built && _stuck.Root.activeSelf;
+        public bool IsFailVisible => _built && _fail.Root.activeSelf;
+
+        /// <summary>True when the Fail card's rewarded-ad Continue button is on screen. Always false until Slice 6.</summary>
+        public bool IsContinueVisible => IsFailVisible && _fail.Buttons[FailContinueIndex].gameObject.activeSelf;
         public bool IsMoreLevelsVisible => _built && _moreLevels.Root.activeSelf;
 
         private void OnEnable() => Subscribe();
@@ -153,8 +168,11 @@ namespace Game.UI
             _win = new Card(_safeArea, "Win Panel", WinTitle, font, 2, UiFeel.WinStars);
             _win.SetButton(0, NextLabel, PrimaryColor, PrimaryText, OnNext);
             _win.SetButton(1, RetryLabel, SecondaryColor, SecondaryText, OnRetry);
-            _stuck = new Card(_safeArea, "Stuck Panel", StuckTitle, font, 1);
-            _stuck.SetButton(0, RetryLabel, PrimaryColor, PrimaryText, OnRetry);
+            _fail = new Card(_safeArea, "Fail Panel", FailTitle, font, 2);
+            _fail.SetButton(FailRetryIndex, RetryLabel, PrimaryColor, PrimaryText, OnRetry);
+            // Rewarded-ad continue arrives in Slice 6: built now so the card has its place, hidden and wired to nothing.
+            _fail.SetButton(FailContinueIndex, ContinueLabel, SecondaryColor, SecondaryText, null);
+            _fail.Buttons[FailContinueIndex].gameObject.SetActive(false);
             _moreLevels = new Card(_safeArea, "More Levels Panel", MoreLevelsTitleLines, font, 1);
             _moreLevels.SetButton(0, ReplayLabel, PrimaryColor, PrimaryText, OnReplay);
 
@@ -209,7 +227,7 @@ namespace Game.UI
 
             var safeDp = new Vector2(safeAreaPx.width / density, safeAreaPx.height / density);
             _win.Apply(ResultPanelLayout.Compute(safeDp, 2, 1, ResultPanelLayout.StarRowDp));
-            _stuck.Apply(ResultPanelLayout.Compute(safeDp, 1));
+            _fail.Apply(ResultPanelLayout.Compute(safeDp, FailVisibleButtons));
             _moreLevels.Apply(ResultPanelLayout.Compute(safeDp, 1, MoreLevelsTitleLineCount));
         }
 
@@ -227,7 +245,7 @@ namespace Game.UI
         {
             if (!_built) return;
             _win.Root.SetActive(panel == ResultPanel.Win);
-            _stuck.Root.SetActive(panel == ResultPanel.Stuck);
+            _fail.Root.SetActive(panel == ResultPanel.Fail);
             _moreLevels.Root.SetActive(panel == ResultPanel.MoreLevelsSoon);
             _backdrop.SetActive(panel != ResultPanel.None);
 
@@ -358,13 +376,15 @@ namespace Game.UI
 
         internal Button WinNextButton => _win.Buttons[0];
         internal Button WinRetryButton => _win.Buttons[1];
-        internal Button StuckRetryButton => _stuck.Buttons[0];
+        internal Button FailRetryButton => _fail.Buttons[FailRetryIndex];
+        internal Button FailContinueButton => _fail.Buttons[FailContinueIndex];
         internal Button MoreLevelsReplayButton => _moreLevels.Buttons[0];
         internal Button[] MoreLevelsButtons => _moreLevels.Buttons;
         internal Text MoreLevelsTitleLabel => _moreLevels.Title;
         internal RectTransform MoreLevelsCard => _moreLevels.Rect;
         internal RectTransform WinCard => _win.Rect;
-        internal RectTransform StuckCard => _stuck.Rect;
+        internal RectTransform FailCard => _fail.Rect;
+        internal Text FailTitleLabel => _fail.Title;
         internal Canvas Canvas => _canvas;
 
         /// <summary>Win card stars (always <see cref="UiFeel.WinStars"/>).</summary>
@@ -395,10 +415,10 @@ namespace Game.UI
         {
             get
             {
-                var all = new Button[_win.Buttons.Length + _stuck.Buttons.Length + _moreLevels.Buttons.Length];
+                var all = new Button[_win.Buttons.Length + _fail.Buttons.Length + _moreLevels.Buttons.Length];
                 _win.Buttons.CopyTo(all, 0);
-                _stuck.Buttons.CopyTo(all, _win.Buttons.Length);
-                _moreLevels.Buttons.CopyTo(all, _win.Buttons.Length + _stuck.Buttons.Length);
+                _fail.Buttons.CopyTo(all, _win.Buttons.Length);
+                _moreLevels.Buttons.CopyTo(all, _win.Buttons.Length + _fail.Buttons.Length);
                 return all;
             }
         }
@@ -548,7 +568,7 @@ namespace Game.UI
                 button.name = label + " Button";
                 ((Image)button.targetGraphic).color = color;
                 CreateText(button.transform, "Label", _font, label, ResultPanelLayout.ButtonFontDp, textColor);
-                button.onClick.AddListener(onClick);
+                if (onClick != null) button.onClick.AddListener(onClick);
             }
 
             public void Apply(ResultPanelMetrics metrics)

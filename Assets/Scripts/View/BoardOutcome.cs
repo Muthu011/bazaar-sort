@@ -9,7 +9,9 @@ namespace Game.View
         /// <summary>Every item cleared (Core <c>Board.Won</c>).</summary>
         Won,
 
-        /// <summary>Items left but no legal move (Core <c>Board.Stuck</c>).</summary>
-        Stuck,
+        /// <summary>
+        /// Lost: items left, no legal move, and no booster can help (Core <c>Board.Failed</c>, issue #41).
+        /// </summary>
+        Failed,
     }
 }

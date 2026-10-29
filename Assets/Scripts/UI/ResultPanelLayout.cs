@@ -50,7 +50,7 @@ namespace Game.UI
     }
 
     /// <summary>
-    /// Layout maths for the Win, Stuck and More-levels-soon panels, pure so it is Edit Mode tested: a card centred in the safe area,
+    /// Layout maths for the Win, Fail and More-levels-soon panels, pure so it is Edit Mode tested: a card centred in the safe area,
     /// never wider than <see cref="MaxCardWidthDp"/>, kept <see cref="MarginDp"/> clear of the safe-area edges, with
     /// buttons at least <see cref="MinTouchDp"/> tall (style guide: 48 dp tap targets).
     /// </summary>

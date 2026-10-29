@@ -23,9 +23,9 @@ namespace Game.Tests.EditMode
         }
 
         [Test]
-        public void Stuck_ShowsStuck_OnAnyLevel([Values(true, false)] bool hasNext)
+        public void Failed_ShowsFail_OnAnyLevel([Values(true, false)] bool hasNext)
         {
-            Assert.AreEqual(ResultPanel.Stuck, ResultPanelChoice.For(BoardOutcome.Stuck, hasNext));
+            Assert.AreEqual(ResultPanel.Fail, ResultPanelChoice.For(BoardOutcome.Failed, hasNext));
         }
 
         [Test]
