@@ -34,6 +34,9 @@ namespace Game.View
         /// <summary>Hand width in tiles.</summary>
         internal const float HandTiles = 0.75f;
 
+        /// <summary>Fingertip below the tile centre, in tiles.</summary>
+        internal const float HandTipBelowCentreTiles = 0.3f;
+
         /// <summary>Arrow width in tiles.</summary>
         internal const float ArrowTiles = 0.45f;
 
@@ -242,8 +245,10 @@ namespace Game.View
             var move = _guide.Move;
             var target = _guide.Board.GetShelf(move.ToShelf);
             int toSlot = Mathf.Max(0, target.FirstFreeFrontSlot);
-            Vector2 from = layout.GetFrontSlotRect(move.FromShelf, move.FromSlot).center;
-            Vector2 to = layout.GetFrontSlotRect(move.ToShelf, toSlot).center;
+            // Fingertip on the lower part of the tile: the hand hangs below it and the item stays readable.
+            var lift = new Vector2(0f, -layout.TileSize * HandTipBelowCentreTiles);
+            Vector2 from = layout.GetFrontSlotRect(move.FromShelf, move.FromSlot).center + lift;
+            Vector2 to = layout.GetFrontSlotRect(move.ToShelf, toSlot).center + lift;
 
             var pose = TutorialCueMotion.Hand(_elapsed);
             float width = layout.TileSize * HandTiles * pose.Scale;
@@ -292,10 +297,45 @@ namespace Game.View
                 _text.text = LockedLine(left);
             }
 
-            var rect = layout.GetShelfRect(shelf);
             _hand.gameObject.SetActive(false);
             _arrow.gameObject.SetActive(false);
-            ShowPill(rect.center, rect.width * 0.92f, layout.TileSize * PillHeightTiles);
+            var pill = LockedPillRect(layout, shelf);
+            ShowPill(pill.center, pill.width, pill.height);
+        }
+
+        /// <summary>
+        /// Where the L11 line goes (pixels): above the locked shelf's front row, in the band up to the front row of the
+        /// shelf above (the shelf's own top strip plus the gap between shelves), left of the padlock, so it covers no
+        /// item and not the padlock's number. Pure layout maths over <see cref="BoardLayout"/>.
+        /// </summary>
+        internal static Rect LockedPillRect(BoardLayout layout, int shelf)
+        {
+            float tile = layout.TileSize;
+            float margin = tile * 0.04f;
+            var shelfRect = layout.GetShelfRect(shelf);
+
+            float bottom = float.MinValue;
+            for (int slot = 0; slot < Shelf.SlotCount; slot++) bottom = Mathf.Max(bottom, layout.GetFrontSlotRect(shelf, slot).yMax);
+
+            // Up to the lowest front row of any shelf above that shares some width; without one, half a tile above.
+            float top = shelfRect.yMax + tile * PillHeightTiles;
+            for (int other = 0; other < layout.ShelfCount; other++)
+            {
+                if (other == shelf) continue;
+                var otherRect = layout.GetShelfRect(other);
+                if (otherRect.yMin < shelfRect.yMax - 0.5f) continue;
+                if (otherRect.xMax <= shelfRect.xMin || otherRect.xMin >= shelfRect.xMax) continue;
+                for (int slot = 0; slot < Shelf.SlotCount; slot++) top = Mathf.Min(top, layout.GetFrontSlotRect(other, slot).yMin);
+            }
+
+            float height = Mathf.Min(tile * PillHeightTiles, Mathf.Max(0f, top - bottom - 2f * margin));
+            float centreY = (bottom + top) * 0.5f;
+
+            // Padlock (BoardView): centred 0.35 of its width in from the shelf's right edge, so its left edge is 0.85 in.
+            float padlockLeft = shelfRect.xMax - 0.85f * tile * BoardView.PadlockWidthTiles;
+            float left = shelfRect.xMin + margin;
+            float right = padlockLeft - margin;
+            return new Rect(left, centreY - height * 0.5f, Mathf.Max(0f, right - left), height);
         }
 
         private void ShowPill(Vector2 centre, float width, float height)
@@ -346,6 +386,21 @@ namespace Game.View
         internal bool IsArrowVisible => _arrow != null && _arrow.gameObject.activeSelf;
         internal bool IsTextVisible => _text != null && _text.gameObject.activeSelf;
         internal string CueText => IsTextVisible ? _text.text : null;
+        /// <summary>Where the hand's fingertip is now (pixels).</summary>
+        internal Vector2 HandTipPixelPosition =>
+            (Vector2)_hand.transform.position * BoardView.PixelsPerUnit
+            + PlaceholderSprites.HandTipOffset * (_hand.transform.localScale.x * BoardView.PixelsPerUnit);
+
+        internal Rect PillPixelRect
+        {
+            get
+            {
+                var centre = (Vector2)_pill.transform.position * BoardView.PixelsPerUnit;
+                var size = _pill.size * BoardView.PixelsPerUnit;
+                return new Rect(centre - size * 0.5f, size);
+            }
+        }
+
         internal Vector2 ArrowPixelPosition => _arrow.transform.position * BoardView.PixelsPerUnit;
     }
 }
