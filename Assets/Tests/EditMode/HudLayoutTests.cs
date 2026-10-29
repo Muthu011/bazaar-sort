@@ -64,6 +64,46 @@ namespace Game.Tests.EditMode
             Assert.LessOrEqual(m.Boosters[m.Boosters.Length - 1].xMax, m.Counter.xMin - HudLayout.GapDp + E);
         }
 
+        // ---- Coin pill width (issue #44, PR #63) ----
+
+        [TestCase(360f, 742.33f)]
+        [TestCase(360f, 616f)]
+        [TestCase(412f, 915f)]
+        public void CoinPill_AtEveryWidth_StaysInTheRow_WithoutTouchingBoostersOrSettings(float w, float h)
+        {
+            foreach (var text in new[] { "0", "20", "999", "1250", "99999", Game.UI.CoinBalanceText.OverflowText })
+            {
+                float width = HudLayout.CounterWidthFor(text);
+                var m = HudLayout.Compute(new Vector2(w, h), Top, Bottom, width);
+                Assert.AreEqual(width, m.Counter.width, E, text);
+                Assert.IsTrue(m.BottomBarFits, text);
+                Assert.LessOrEqual(m.Counter.xMax, m.Settings.xMin - HudLayout.GapDp + E, $"{text}: left of settings.");
+                var lastBooster = m.Boosters[m.Boosters.Length - 1];
+                Assert.LessOrEqual(lastBooster.xMax, m.Counter.xMin - HudLayout.GapDp + E, $"{text}: clear of the booster slots.");
+                foreach (var b in m.Boosters) Assert.GreaterOrEqual(b.width, 48f, $"{text}: booster touch floor.");
+            }
+        }
+
+        [TestCase(360f, 742.33f)]
+        [TestCase(412f, 915f)]
+        public void CoinPill_GrowsLeftwards_AndTheBoostersNeverMove(float w, float h)
+        {
+            var narrow = HudLayout.Compute(new Vector2(w, h), Top, Bottom, HudLayout.CounterMinWidthDp);
+            var wide = HudLayout.Compute(new Vector2(w, h), Top, Bottom, HudLayout.CounterMaxWidthDp);
+            Assert.AreEqual(narrow.Counter.xMax, wide.Counter.xMax, E, "Right edge fixed beside settings.");
+            Assert.Less(wide.Counter.xMin, narrow.Counter.xMin);
+            for (int i = 0; i < narrow.Boosters.Length; i++) Assert.AreEqual(narrow.Boosters[i], wide.Boosters[i], $"Booster {i}");
+        }
+
+        [Test]
+        public void CoinPill_WidthIsClamped()
+        {
+            var m = For(360f, 742f);
+            Assert.AreEqual(HudLayout.CounterMinWidthDp, m.Counter.width, E, "Default is the minimum.");
+            Assert.AreEqual(HudLayout.CounterMinWidthDp, HudLayout.Compute(new Vector2(360f, 742f), Top, Bottom, 10f).Counter.width, E);
+            Assert.AreEqual(HudLayout.CounterMaxWidthDp, HudLayout.Compute(new Vector2(360f, 742f), Top, Bottom, 500f).Counter.width, E);
+        }
+
         [Test]
         public void TinyReserve_KeepsTheTouchFloor_AndSitsOnTheBottom()
         {

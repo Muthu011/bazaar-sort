@@ -31,7 +31,7 @@ namespace Game.UI
         /// <summary>"Level 3", centred in the upper part of the top bar (the status line sits under it).</summary>
         public Rect LevelLabel { get; }
 
-        /// <summary>Coin (clear) counter pill, left of the settings button.</summary>
+        /// <summary>Coin pill (the wallet), left of the settings button; as wide as its text needs (84 to 103.5 dp).</summary>
         public Rect Counter { get; }
 
         /// <summary>Settings button, bottom-right.</summary>
@@ -75,8 +75,32 @@ namespace Game.UI
     {
         public const float MinTouchDp = ResultPanelLayout.MinTouchDp;
         public const float SettingsDp = MinTouchDp;
-        public const float CounterWidthDp = 84f;
+        /// <summary>The coin pill is never narrower than this (up to 3 digits fit in it).</summary>
+        public const float CounterMinWidthDp = 84f;
         public const float CounterHeightDp = 40f;
+
+        /// <summary>Coin icon inside the pill: its left inset and size, in dp.</summary>
+        public const float CounterIconLeftDp = 6f;
+        public const float CounterIconDp = 28f;
+
+        /// <summary>The number's box inside the pill: from this far from the left edge (icon + 4 dp) to this far from the right.</summary>
+        public const float CounterTextLeftDp = 38f;
+        public const float CounterTextRightDp = 8f;
+
+        /// <summary>
+        /// Room per glyph at <see cref="CounterFontDp"/> in the built-in bold font, in dp: the measured advance (a digit
+        /// 11, "+" 12, "K" 15 at density 1) plus 0.5 dp, because text laid out at a phone's density comes out up to ~2%
+        /// wider (seen in Play Mode: "1250" 44.8 dp). Any other glyph is taken as wide.
+        /// </summary>
+        public const float CounterDigitDp = 11.5f;
+        public const float CounterPlusDp = 12.5f;
+        public const float CounterWideGlyphDp = 15.5f;
+
+        /// <summary>Most digits drawn as themselves (<see cref="CoinBalanceText.MaxShown"/>).</summary>
+        public const int CounterMaxDigits = 5;
+
+        /// <summary>The widest the pill gets: five digits. The booster slots are sized against this, so they never move.</summary>
+        public const float CounterMaxWidthDp = CounterTextLeftDp + CounterMaxDigits * CounterDigitDp + CounterTextRightDp;
         public const float SideMarginDp = 16f;
         public const float GapDp = 8f;
         public const int CounterFontDp = 20;
@@ -91,7 +115,33 @@ namespace Game.UI
         /// <summary>Level label centre, as a fraction of the top reserve measured up from the reserve's bottom edge.</summary>
         public const float LevelLabelCentreInReserve = 0.68f;
 
-        public static HudMetrics Compute(Vector2 safeSizeDp, float topReserveFraction, float bottomReserveFraction)
+        /// <summary>
+        /// Pill width for <paramref name="text"/> (a <see cref="CoinBalanceText"/> string) at the full font size: room for
+        /// the icon, the glyphs and the right inset, never under <see cref="CounterMinWidthDp"/> nor over
+        /// <see cref="CounterMaxWidthDp"/>. The text is never shrunk to fit; it is the pill that grows.
+        /// </summary>
+        public static float CounterWidthFor(string text)
+        {
+            float glyphs = 0f;
+            if (text != null)
+            {
+                for (int i = 0; i < text.Length; i++)
+                {
+                    char c = text[i];
+                    glyphs += c >= '0' && c <= '9' ? CounterDigitDp : c == '+' ? CounterPlusDp : CounterWideGlyphDp;
+                }
+            }
+            return Mathf.Clamp(CounterTextLeftDp + glyphs + CounterTextRightDp, CounterMinWidthDp, CounterMaxWidthDp);
+        }
+
+        /// <summary>
+        /// The HUD for a safe area of <paramref name="safeSizeDp"/>, with the coin pill <paramref name="counterWidthDp"/>
+        /// wide (clamped to <see cref="CounterMinWidthDp"/>..<see cref="CounterMaxWidthDp"/>; it grows leftwards from
+        /// beside the settings button). The booster slots always leave room for the widest pill, so a growing balance
+        /// never moves them.
+        /// </summary>
+        public static HudMetrics Compute(Vector2 safeSizeDp, float topReserveFraction, float bottomReserveFraction,
+            float counterWidthDp = CounterMinWidthDp)
         {
             float w = safeSizeDp.x;
             float h = safeSizeDp.y;
@@ -100,8 +150,9 @@ namespace Game.UI
 
             // Bottom bar, right to left: settings, counter, then the booster slots fill what is left from the left.
             var settings = new Rect(w - SideMarginDp - SettingsDp, 0f, SettingsDp, SettingsDp);
-            var counter = new Rect(settings.xMin - GapDp - CounterWidthDp, 0f, CounterWidthDp, CounterHeightDp);
-            float room = counter.xMin - GapDp - SideMarginDp;
+            float counterWidth = Mathf.Clamp(counterWidthDp, CounterMinWidthDp, CounterMaxWidthDp);
+            var counter = new Rect(settings.xMin - GapDp - counterWidth, 0f, counterWidth, CounterHeightDp);
+            float room = settings.xMin - GapDp - CounterMaxWidthDp - GapDp - SideMarginDp;
             float booster = Mathf.Clamp((room - (BoosterSlots - 1) * GapDp) / BoosterSlots, MinTouchDp, BoosterMaxDp);
 
             // One row centred in the reserve; on a reserve shorter than the row, keep the touch floor and sit on the bottom.

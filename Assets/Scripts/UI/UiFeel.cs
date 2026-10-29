@@ -3,8 +3,9 @@ using UnityEngine;
 namespace Game.UI
 {
     /// <summary>
-    /// Timings and sizes of the UI feel (issue #21): button press, coin flight, counter punch, Win stars. Constants
-    /// only, so the values are reviewed in one place and Edit Mode tested; the tweens are DOTween.
+    /// Timings and sizes of the UI feel (issues #21, #44): button press, Win stars, and the Win card's coins flying into
+    /// the HUD pill. Constants and pure maths only, so the values are reviewed in one place and Edit Mode tested; the
+    /// tweens are DOTween, built once and restarted (no allocation per frame).
     /// </summary>
     public static class UiFeel
     {
@@ -14,7 +15,7 @@ namespace Game.UI
         /// <summary>Seconds to press down (and, played backwards, to come back up).</summary>
         public const float PressSeconds = 0.07f;
 
-        /// <summary>Seconds a coin takes from the triple to the counter.</summary>
+        /// <summary>Seconds a coin takes from the Win card's "+N" line to the HUD pill.</summary>
         public const float CoinSeconds = 0.5f;
 
         /// <summary>How high the coin's path bows above the straight line, in dp.</summary>
@@ -23,12 +24,14 @@ namespace Game.UI
         /// <summary>Coin size, in dp.</summary>
         public const float CoinDp = 36f;
 
-        /// <summary>Coins that can fly at once; more clears than that in flight count without a coin.</summary>
+        /// <summary>Pooled coins: the most that fly for one win.</summary>
         public const int CoinPool = 6;
 
-        /// <summary>Counter punch when a coin lands.</summary>
-        public const float CounterPunch = 0.25f;
-        public const float CounterPunchSeconds = 0.2f;
+        /// <summary>One flying coin per this many coins earned (at least one, at most <see cref="CoinPool"/>): 10 -> 2, 20 -> 4.</summary>
+        public const int CoinsPerFlyingCoin = 5;
+
+        /// <summary>Gap between one Win coin setting off and the next.</summary>
+        public const float CoinStaggerSeconds = 0.08f;
 
         /// <summary>Star slots on the Win panel, one per possible star; the earned ones are lit (issue #44).</summary>
         public const int WinStars = 3;
@@ -69,6 +72,28 @@ namespace Game.UI
             p = Mathf.Clamp01(p);
             return Mathf.Lerp(1f, 0.8f, p) + 0.3f * Mathf.Sin(Mathf.PI * p);
         }
+
+        /// <summary>Coins that fly for a win of <paramref name="coins"/> coins; 0 for none.</summary>
+        public static int CoinsFlownFor(int coins)
+        {
+            if (coins <= 0) return 0;
+            int flown = (coins + CoinsPerFlyingCoin - 1) / CoinsPerFlyingCoin;
+            return Mathf.Clamp(flown, 1, CoinPool);
+        }
+
+        /// <summary>
+        /// Coins counted on the pill once <paramref name="landed"/> of <paramref name="flown"/> coins have landed, out of
+        /// <paramref name="coins"/>: the count climbs in near-equal steps and the last landing always reaches the total.
+        /// </summary>
+        public static int CoinsLanded(int coins, int flown, int landed)
+        {
+            if (coins <= 0 || flown <= 0 || landed <= 0) return 0;
+            if (landed >= flown) return coins;
+            return (int)((long)coins * landed / flown);
+        }
+
+        /// <summary>Seconds from the first Win coin setting off to the last one landing.</summary>
+        public static float CoinsSecondsFor(int flown) => flown <= 0 ? 0f : (flown - 1) * CoinStaggerSeconds + CoinSeconds;
 
         /// <summary>When star <paramref name="index"/> starts to drop.</summary>
         public static float StarStart(int index) => index * StarStaggerSeconds;
