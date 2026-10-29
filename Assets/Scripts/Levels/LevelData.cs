@@ -1,3 +1,4 @@
+using Game.Core;
 using System.Collections.Generic;
 
 namespace Game.Levels
@@ -22,7 +23,10 @@ namespace Game.Levels
         /// <summary>easy | medium | hard | breather | boss. Not checked yet.</summary>
         public string Role { get; set; }
 
-        /// <summary>Optional tutorial key: match3 | layers | undo | extra_slot. Not checked yet.</summary>
+        /// <summary>
+        /// Optional tutorial key: match3 | layers | locked | undo | extra_slot, or null (<see cref="TutorialKeys"/>).
+        /// Checked by <see cref="LevelValidator"/>.
+        /// </summary>
         public string Tutorial { get; set; }
 
         /// <summary>Null means unlimited.</summary>
@@ -84,5 +88,39 @@ namespace Game.Levels
         {
             return kind == Normal || kind == Locked;
         }
+    }
+
+    /// <summary>
+    /// The level JSON <c>tutorial</c> values (docs/level-schema.md) and their <see cref="TutorialKind"/>. The key is
+    /// also what the progress save records once a tutorial is completed.
+    /// </summary>
+    public static class TutorialKeys
+    {
+        public const string Match3 = "match3";
+        public const string Layers = "layers";
+        public const string Locked = "locked";
+        public const string Undo = "undo";
+        public const string ExtraSlot = "extra_slot";
+
+        /// <summary>
+        /// Maps a key to its kind. Null means no tutorial (<see cref="TutorialKind.None"/>, true); an unknown key is
+        /// false.
+        /// </summary>
+        public static bool TryParse(string key, out TutorialKind kind)
+        {
+            switch (key)
+            {
+                case null: kind = TutorialKind.None; return true;
+                case Match3: kind = TutorialKind.Match3; return true;
+                case Layers: kind = TutorialKind.Layers; return true;
+                case Locked: kind = TutorialKind.Locked; return true;
+                case Undo: kind = TutorialKind.Undo; return true;
+                case ExtraSlot: kind = TutorialKind.ExtraSlot; return true;
+                default: kind = TutorialKind.None; return false;
+            }
+        }
+
+        /// <summary>The kind for <paramref name="key"/>, or None when it is null or unknown.</summary>
+        public static TutorialKind Parse(string key) => TryParse(key, out var kind) ? kind : TutorialKind.None;
     }
 }

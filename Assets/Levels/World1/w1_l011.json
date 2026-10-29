@@ -4,7 +4,7 @@
   "world": 1,
   "index": 11,
   "role": "easy",
-  "tutorial": null,
+  "tutorial": "locked",
   "moveLimit": null,
   "timeLimitSec": null,
   "shelves": [

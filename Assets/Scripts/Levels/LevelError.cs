@@ -45,6 +45,13 @@ namespace Game.Levels
         /// so every board keeps its touch areas on every phone.
         /// </summary>
         TooManyShelves,
+        /// <summary><c>tutorial</c> is not null and not one of match3, layers, locked, undo, extra_slot.</summary>
+        UnknownTutorial,
+        /// <summary>
+        /// The tutorial can't apply to this board: <c>layers</c> without a hidden layer on an open shelf, or
+        /// <c>locked</c> without a locked shelf.
+        /// </summary>
+        TutorialDoesNotFit,
     }
 
     /// <summary>

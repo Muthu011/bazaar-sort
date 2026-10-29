@@ -9,7 +9,7 @@ One JSON file per level: `Assets/Levels/World<N>/w<N>_l<NNN>.json`.
   "world": 1,
   "index": 1,
   "role": "easy",              // easy | medium | hard | breather | boss
-  "tutorial": "match3",        // optional: match3 | layers | undo | extra_slot
+  "tutorial": "match3",        // optional: match3 | layers | locked | undo | extra_slot
   "moveLimit": null,           // null = unlimited
   "timeLimitSec": null,        // null = no timer
   "shelves": [
@@ -43,7 +43,24 @@ Rules:
 - Every object type appears a multiple of 3 times, except objects used by trays (which must match their tray sets exactly).
 - Object ids come from `docs/game-design.md` world lists, in snake_case.
 - At least one empty front slot must exist at the start.
+- `tutorial` (issue #57) is null or one of the keys above, and must fit the board: `layers` needs a hidden layer on a
+  shelf that is not locked, `locked` needs a locked shelf (`TutorialDoesNotFit`); any other value is `UnknownTutorial`.
 - `solver.hash` is a canonical hash (layout normalised for mirroring and object renaming) used to reject duplicates.
+
+## Tutorials (issue #57)
+
+The `tutorial` field picks a first-play guide (`Game.Core.TutorialGuide`, shown by `Game.View.TutorialDirector`):
+
+| Key | Level | What the player sees | Done when |
+| --- | --- | --- | --- |
+| `match3` | L1 | A hand pointer from one item to the shelf that makes a triple, and "Match 3!". Only that move can be made | The first triple clears |
+| `layers` | L2 | An arrow at the hidden row of the first shelf that has one. No text, nothing restricted | A hidden layer is revealed |
+| `locked` | L11 | One short line at the first locked shelf ("Make 1 match to open"). Nothing restricted | A locked shelf opens |
+| `undo`, `extra_slot` | L5, L7 | Nothing yet: these need boosters (issue #58) | |
+
+A guide also ends when the level is won. Once it is done, the key is saved with the player's progress
+(`tutorialsDone` in `progress.json`) and the guide is skipped from then on, on replays too. The key is not part of
+`solver.hash`.
 
 ## The `solver` block (issue #20)
 
