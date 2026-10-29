@@ -146,6 +146,62 @@ namespace Game.Tests.EditMode
             if (fast.Solvability == Solvability.Solvable) AssertLineWins(board, fast);
         }
 
+        [TestCase(5, 5, 1, 4UL, 1)]
+        [TestCase(5, 5, 1, 5UL, 2)]
+        [TestCase(5, 5, 2, 4UL, 1)]
+        public void Solve_WithALockedShelf_AStarAgreesWithPlainBreadthFirstSearch(int shelves, int types, int hidden,
+            ulong seed, int lockClears)
+        {
+            // Issue #31: lock counters are part of the state; the canonical search must still find the true minimum.
+            var locks = new int[shelves];
+            locks[shelves - 1] = lockClears;
+            var board = SyntheticLevels.Build(SyntheticLevels.Deal(shelves, types, hidden, seed), locks);
+
+            var fast = ShortestSolver.Solve(board);
+            var reference = ShortestSolver.Solve(board, null, new SolverOptions { ReferenceMode = true });
+
+            Assert.AreNotEqual(Solvability.Unknown, reference.Solvability, "reference search ran out of budget");
+            Assert.AreEqual(reference.Solvability, fast.Solvability);
+            Assert.AreEqual(reference.MinMoves, fast.MinMoves);
+            if (fast.Solvability == Solvability.Solvable) AssertLineWins(board, fast);
+        }
+
+        [TestCase(1)]
+        [TestCase(2)]
+        public void DeadEndOracle_AgreesWithTheShortestSolutionSearch_AlongRandomPlays(int hiddenLayers)
+        {
+            // Issue #31: the dead-end search expands states a little at a time and recognises known-alive boards by
+            // their cheap key; its answers must still be facts: alive exactly when a fresh shortest-solution search
+            // (checked against plain breadth-first search above) finds a win. Small tight boards with a locked shelf,
+            // so the random plays reach dead ends as well as live states.
+            int alive = 0, dead = 0;
+            for (ulong seed = 1; seed <= 6; seed++)
+            {
+                var board = SyntheticLevels.Build(SyntheticLevels.Deal(4, 4, hiddenLayers, seed), new[] { 0, 0, 0, 1 });
+                var context = new SearchContext(board, null);
+                var oracle = new LivenessOracle(context, 500_000, null);
+                var rng = new System.Random((int)seed);
+                var moves = new System.Collections.Generic.List<SolverMove>();
+                var current = context.Root;
+                for (int step = 0; step < 60 && !current.IsWon; step++)
+                {
+                    var fresh = ShortestSolver.Solve(current);
+                    Assert.AreNotEqual(Solvability.Unknown, fresh.Solvability);
+                    bool expected = fresh.Solvability == Solvability.Solvable;
+                    Assert.AreEqual(expected, oracle.IsAlive(current), $"seed {seed} step {step}");
+                    if (expected) alive++;
+                    else dead++;
+                    if (expected && rng.Next(3) == 0) oracle.MarkAlive(current);
+
+                    context.GenerateMoves(current, moves, false);
+                    if (moves.Count == 0) break;
+                    current = SearchContext.Apply(current, moves[rng.Next(moves.Count)]);
+                }
+            }
+            Assert.Greater(alive, 0);
+            Assert.Greater(dead, 0, "the random plays should reach some dead ends");
+        }
+
         [Test]
         public void Analysis_UnsolvableBoard_EveryPlayLosesAndEveryStateIsADeadEnd()
         {

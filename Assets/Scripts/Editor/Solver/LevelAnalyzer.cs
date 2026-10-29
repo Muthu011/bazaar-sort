@@ -7,6 +7,22 @@ using Game.Levels;
 
 namespace Game.Solver
 {
+    /// <summary>How far an analysis got.</summary>
+    public enum AnalysisOutcome
+    {
+        /// <summary>The level could not be analysed at all (see <see cref="LevelAnalysis.Problem"/>).</summary>
+        NotAnalysed = 0,
+
+        /// <summary>Every number is proven (<see cref="LevelAnalysis.Complete"/>).</summary>
+        Complete,
+
+        /// <summary>
+        /// A budget ran out (the level's 30 s / node limit, the search's node limit or a dead-end search's limit), so
+        /// some number is unknown. <see cref="LevelAnalysis.InconclusiveReason"/> says which.
+        /// </summary>
+        Inconclusive,
+    }
+
     /// <summary>Everything the solver knows about one level.</summary>
     public sealed class LevelAnalysis
     {
@@ -24,6 +40,12 @@ namespace Game.Solver
         public bool HashExact { get; internal set; } = true;
         public double Seconds { get; internal set; }
 
+        /// <summary>Nodes charged to the level budget (boards built with the Core rules, all phases).</summary>
+        public long BudgetNodesUsed { get; internal set; }
+
+        /// <summary>Why the level's shared budget ran out; null when it lasted.</summary>
+        public string BudgetReason { get; internal set; }
+
         public bool HasBand { get; internal set; }
         public WinRateBand Band { get; internal set; }
 
@@ -33,8 +55,34 @@ namespace Game.Solver
         /// True when every number is proven: no load problem, solvability known, dead-end rate fully classified, exact
         /// hash. Only complete analyses are written to level files.
         /// </summary>
-        public bool Complete => Problem == null && Shortest != null && Shortest.Solvability != Solvability.Unknown
-            && Plays != null && Plays.DeadEndComplete && HashExact;
+        public bool Complete => Problem == null && BudgetReason == null && Shortest != null
+            && Shortest.Solvability != Solvability.Unknown && Plays != null && Plays.DeadEndComplete && HashExact;
+
+        public AnalysisOutcome Outcome => Problem != null ? AnalysisOutcome.NotAnalysed
+            : Complete ? AnalysisOutcome.Complete : AnalysisOutcome.Inconclusive;
+
+        /// <summary>Why the analysis is <see cref="AnalysisOutcome.Inconclusive"/>; null otherwise.</summary>
+        public string InconclusiveReason
+        {
+            get
+            {
+                if (Outcome != AnalysisOutcome.Inconclusive) return null;
+                if (BudgetReason != null) return BudgetReason;
+                if (Shortest == null || Shortest.Solvability == Solvability.Unknown)
+                {
+                    return "shortest-solution search: " + (Shortest?.Reason ?? "not run");
+                }
+                if (Plays == null) return "simulated plays not run";
+                if (!Plays.AllPlaysRun) return $"only {Plays.PlaysRun} of {Plays.Plays} plays ran: {Plays.StoppedReason}";
+                if (Plays.UnknownStates > 0)
+                {
+                    return $"{Plays.UnknownStates} visited states left unclassified (a dead-end search hit its " +
+                           "per-search node budget)";
+                }
+                if (!HashExact) return "layout hash is not exact";
+                return "incomplete";
+            }
+        }
 
         public bool InBand => HasBand && Plays != null && Band.Contains(SolverBlock.Round(Plays.WinRate));
 
@@ -49,18 +97,23 @@ namespace Game.Solver
         public override string ToString()
         {
             if (Problem != null) return $"{Id ?? SourceName}: NOT ANALYSED: {Problem}";
+            string prefix = Outcome == AnalysisOutcome.Inconclusive ? $"INCONCLUSIVE ({InconclusiveReason}) " : "";
             string solvable = Solvability == Solvability.Unknown ? $"unknown ({Shortest?.Reason})" : Solvability.ToString();
             string band = HasBand ? $"{Band} {(InBand ? "ok" : "OUT OF BAND")}" : $"no band for role '{Role}'";
             string dead = Plays == null ? "-" : Plays.DeadEndComplete ? $"{SolverBlock.Round(Plays.DeadEndRate):0.000}"
                 : $"{SolverBlock.Round(Plays.DeadEndRate):0.000} ({Plays.UnknownStates} states unknown)";
-            return $"{Id}: {solvable}, minMoves {Shortest?.MinMoves}, deadEndRate {dead}, " +
-                   $"estWinRate {SolverBlock.Round(Plays?.WinRate ?? 0):0.000} ({Plays?.Wins}/{Plays?.Plays}; " +
+            return $"{Id}: {prefix}{solvable}, minMoves {Shortest?.MinMoves}, deadEndRate {dead}, " +
+                   $"estWinRate {SolverBlock.Round(Plays?.WinRate ?? 0):0.000} ({Plays?.Wins}/{Plays?.PlaysRun}; " +
                    $"stuck {Plays?.LossesStuck}, circling {Plays?.LossesCircling}, too long {Plays?.LossesTooLong}), " +
-                   $"band {band}, hash {Hash}, {Seconds:0.00} s";
+                   $"band {band}, hash {Hash}, {Seconds:0.00} s, {BudgetNodesUsed} boards";
         }
     }
 
-    /// <summary>Runs the shortest-solution search, the simulated plays and the layout hash for one level.</summary>
+    /// <summary>
+    /// Runs the shortest-solution search, the simulated plays and the layout hash for one level. All phases share one
+    /// <see cref="SearchBudget"/> (<see cref="SolverOptions.LevelTimeLimitSeconds"/>,
+    /// <see cref="SolverOptions.LevelNodeBudget"/>); when it runs out the analysis stops and is Inconclusive.
+    /// </summary>
     public static class LevelAnalyzer
     {
         public static LevelAnalysis AnalyzeJson(string json, string sourceName = null, SolverOptions options = null)
@@ -92,7 +145,12 @@ namespace Game.Solver
             analysis.HasBand = DifficultyBands.TryGetBand(analysis.Index, analysis.Role, out var band);
             analysis.Band = band;
 
-            var pinned = level.Shelves.Select(s => (s.Kind ?? ShelfKinds.Normal) != ShelfKinds.Normal).ToList();
+            // Locked shelves need no pin (their lock counter is in every key); any other special kind keeps its place.
+            var pinned = level.Shelves.Select(s =>
+            {
+                string kind = s.Kind ?? ShelfKinds.Normal;
+                return kind != ShelfKinds.Normal && kind != ShelfKinds.Locked;
+            }).ToList();
             Run(analysis, load.Board, pinned, options ?? SolverOptions.Default);
             analysis.Seconds = stopwatch.Elapsed.TotalSeconds;
             return analysis;
@@ -109,24 +167,58 @@ namespace Game.Solver
             return analysis;
         }
 
+        private static IReadOnlyList<SolverMove> SolutionOf(SolveResult result)
+        {
+            return result != null && result.Solvability == Solvability.Solvable ? result.Solution : null;
+        }
+
         private static void Run(LevelAnalysis analysis, Board board, IReadOnlyList<bool> pinned, SolverOptions options)
         {
-            var context = new SearchContext(board, pinned);
-            analysis.Shortest = ShortestSolver.Solve(context, options);
+            var budget = SearchBudget.For(options);
+            var context = new SearchContext(board, pinned, !options.ReferenceMode);
 
-            var oracle = new LivenessOracle(context, options.LivenessNodeBudget);
-            if (analysis.Shortest.Solvability == Solvability.Solvable)
+            if (PlaySimulator.ThreadCount(options) == 1)
             {
-                // Every state on a winning line is alive.
-                var replay = board;
-                oracle.MarkAlive(context.Key(replay));
-                foreach (var move in analysis.Shortest.Solution)
+                // One thread: shortest solution first, then the plays, which start knowing the winning line.
+                analysis.Shortest = ShortestSolver.Solve(context, options, budget);
+                if (!budget.Exhausted)
                 {
-                    replay = SearchContext.Apply(replay, move);
-                    if (!replay.IsWon) oracle.MarkAlive(context.Key(replay));
+                    analysis.Plays = PlaySimulator.Run(context, options, new WinningLine(SolutionOf(analysis.Shortest)),
+                        budget);
                 }
             }
-            analysis.Plays = PlaySimulator.Run(context, options, oracle);
+            else
+            {
+                // The shortest-solution search runs on its own thread while the plays run on theirs; it publishes
+                // its winning line when found, which only spares the plays some dead-end searches. Neither result
+                // depends on the other, so the numbers are the same as one thread's.
+                var line = new WinningLine();
+                var playContext = context.CreateSibling();
+                SolveResult shortest = null;
+                Exception failure = null;
+                var search = new System.Threading.Thread(() =>
+                {
+                    try
+                    {
+                        shortest = ShortestSolver.Solve(context, options, budget);
+                        line.Publish(SolutionOf(shortest));
+                    }
+                    catch (Exception e)
+                    {
+                        failure = e;
+                        budget.Stop("the shortest-solution search failed: " + e.Message);
+                    }
+                }, 16 * 1024 * 1024) { IsBackground = true, Name = "Bazaar Sort solver shortest" };
+                search.Start();
+                var plays = PlaySimulator.Run(playContext, options, line, budget);
+                search.Join();
+                if (failure != null) throw new InvalidOperationException("Shortest-solution search failed.", failure);
+                analysis.Shortest = shortest;
+                analysis.Plays = plays;
+            }
+
+            analysis.BudgetNodesUsed = budget.Used;
+            analysis.BudgetReason = budget.Reason;
         }
     }
 }

@@ -140,7 +140,39 @@ namespace Game.Core
             {
                 shelves[i] = _shelves[i].Clone();
             }
-            return new Board(shelves);
+            return new Board(shelves, _itemCount);
+        }
+
+        // For Clone: the shelves are fresh copies of a settled board, so the checks and settling of the public
+        // constructor are not needed.
+        private Board(Shelf[] clonedShelves, int itemCount)
+        {
+            _shelves = clonedShelves;
+            _justOpened = new bool[clonedShelves.Length];
+            _itemCount = itemCount;
+        }
+
+        /// <summary>
+        /// Overwrites this board's state with <paramref name="source"/>'s, without allocating. Both boards must come
+        /// from one board by <see cref="Clone"/> (directly or through other clones). Like a fresh clone, the result has
+        /// not raised Won or Stuck; event subscribers are kept. For search tools that try many moves from one board.
+        /// </summary>
+        public void CopyStateFrom(Board source)
+        {
+            if (source == null) throw new ArgumentNullException(nameof(source));
+            if (source._shelves.Length != _shelves.Length)
+            {
+                throw new ArgumentException("Boards must be clones of the same board.", nameof(source));
+            }
+            for (int i = 0; i < _shelves.Length; i++)
+            {
+                _shelves[i].CopyStateFrom(source._shelves[i]);
+                _justOpened[i] = false;
+            }
+            _itemCount = source._itemCount;
+            _wonRaised = false;
+            _stuckRaised = false;
+            _pendingUnlocks = 0;
         }
 
         public int ShelfCount => _shelves.Length;
@@ -171,10 +203,22 @@ namespace Game.Core
                 if (_shelves[from].IsLocked || _shelves[from].IsFrontEmpty) continue;
                 for (int to = 0; to < _shelves.Length; to++)
                 {
-                    if (to != from && !_shelves[to].IsLocked && _shelves[to].HasFreeFrontSlot) return true;
+                    if (to != from && CanReceive(to)) return true;
                 }
             }
             return false;
+        }
+
+        /// <summary>
+        /// True when shelf <paramref name="shelf"/> may take a moved item: it is not locked and has a free front slot.
+        /// These are the target checks of <see cref="CanMove"/>, so <c>CanMove(from, slot, to)</c> is
+        /// <see cref="MoveResult.Ok"/> exactly when <c>CanPick(from, slot)</c> is Ok, <c>from != to</c> and
+        /// <c>CanReceive(to)</c>. Search tools use this to test each target once per board instead of once per item.
+        /// </summary>
+        public bool CanReceive(int shelf)
+        {
+            var target = _shelves[shelf];
+            return !target.IsLocked && target.HasFreeFrontSlot;
         }
 
         /// <summary>
@@ -213,7 +257,7 @@ namespace Game.Core
             if (fromShelf == toShelf) return MoveResult.SameShelf;
             if (_shelves[toShelf].IsLocked) return MoveResult.TargetLocked;
             if (!_shelves[toShelf].HasFreeFrontSlot) return MoveResult.TargetFull;
-            return MoveResult.Ok;
+            return MoveResult.Ok; // keep in step with CanReceive
         }
 
         /// <inheritdoc cref="TryMove(int,int,int,out MoveResult)"/>
