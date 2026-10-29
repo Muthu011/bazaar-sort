@@ -51,7 +51,7 @@ namespace Game.EditorTools
                     rig.Step(FeelMotion.ArcSeconds * 0.45f);
                     written.Add(rig.Save(Path.Combine(outputDir, "2_mid_arc_1080x1920.png")));
 
-                    // 3. Clear burst with the coin on its way to the counter.
+                    // 3. Clear burst (issue #21 file names kept; since PR #63 a clear flies no coin).
                     rig.Step(FeelMotion.ArcSeconds * 0.55f + ClearRevealMotion.ClearPopSeconds + 0.12f);
                     written.Add(rig.Save(Path.Combine(outputDir, "3_clear_burst_coin_1080x1920.png")));
                     rig.Step(0.6f);
@@ -74,7 +74,7 @@ namespace Game.EditorTools
                     written.Add(rig.Save(Path.Combine(outputDir, "5_stars_confetti_1080x1920.png")));
                 }
 
-                // Frame sequence at 30 fps, half size: tap, arc, clear, coin, counter on w1_l001.
+                // Frame sequence at 30 fps, half size: tap, arc, clear on w1_l001.
                 string seqDir = Path.Combine(outputDir, "sequence");
                 Directory.CreateDirectory(seqDir);
                 using (var rig = new Rig(540, 960, Load("Assets/Levels/World1/w1_l001.json")))

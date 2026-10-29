@@ -4,7 +4,7 @@ namespace Game.Services
 {
     /// <summary>
     /// The player's saved progress: best stars per level and the furthest unlocked level, by level id,
-    /// and the tutorials already completed. Knows nothing
+    /// the tutorials already completed, and the coin wallet (issue #44). Knows nothing
     /// about level order; <see cref="ProgressRules"/> turns it into "continue here" and "what does this win unlock".
     /// </summary>
     public interface IProgressService
@@ -15,11 +15,21 @@ namespace Game.Services
         /// <summary>Best stars for <paramref name="levelId"/>, 0 when never won.</summary>
         int GetStars(string levelId);
 
+        /// <summary>Coins in the wallet (0 or more).</summary>
+        int Coins { get; }
+
         /// <summary>
-        /// Records a win with <paramref name="stars"/> (the best count is kept) and sets <paramref name="highestUnlocked"/>,
-        /// then saves at once.
+        /// Records a win with <paramref name="stars"/> (the best count is kept, so stars never go down), sets
+        /// <paramref name="highestUnlocked"/> and adds <paramref name="coinsEarned"/> to the wallet, then saves once.
         /// </summary>
-        void RecordWin(string levelId, int stars, string highestUnlocked);
+        void RecordWin(string levelId, int stars, string highestUnlocked, int coinsEarned);
+
+        /// <summary>
+        /// Pays <paramref name="price"/> coins from the wallet (boosters, #56) and saves. With too few coins nothing
+        /// changes, nothing is saved and it returns false. A price of 0 succeeds without a save.
+        /// </summary>
+        /// <exception cref="ArgumentOutOfRangeException">A negative price.</exception>
+        bool TrySpendCoins(int price);
 
         /// <summary>
         /// True once the tutorial with key <paramref name="tutorialKey"/> (the level JSON <c>tutorial</c> value, e.g.

@@ -6,7 +6,7 @@ namespace Game.Services
     /// <summary>
     /// The saved player progress, exactly as written to disk (Unity <c>JsonUtility</c> field names). Levels are keyed by
     /// level id (the level file's name, e.g. <c>w1_l001</c>), never by list position, so adding or reordering levels
-    /// keeps what the player has done. No coins: the clear counter is display only until boosters (Muthu, #21).
+    /// keeps what the player has done. Holds the coin wallet (issue #44).
     /// </summary>
     [Serializable]
     public sealed class ProgressData
@@ -26,9 +26,15 @@ namespace Game.Services
         /// </summary>
         public List<string> tutorialsDone = new List<string>();
 
+        /// <summary>
+        /// Coin wallet balance, never negative (issue #44). Added without a version bump: a save written before it has
+        /// no such field and reads as 0 coins, with its stars and unlocks kept.
+        /// </summary>
+        public int coins;
+
         public ProgressData Clone()
         {
-            var copy = new ProgressData { version = version, highestUnlocked = highestUnlocked };
+            var copy = new ProgressData { version = version, highestUnlocked = highestUnlocked, coins = coins };
             foreach (var entry in levels) copy.levels.Add(new LevelStars { id = entry.id, stars = entry.stars });
             copy.tutorialsDone.AddRange(tutorialsDone);
             return copy;

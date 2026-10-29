@@ -56,9 +56,29 @@ namespace Game.Tests.EditMode
         }
 
         [Test]
-        public void Serializer_NeverWritesCoins()
+        public void Serializer_RoundTripsCoins()
         {
-            StringAssert.DoesNotContain("coin", ProgressSerializer.Write(Sample()).ToLowerInvariant());
+            var sample = Sample();
+            sample.coins = 135;
+            string json = ProgressSerializer.Write(sample);
+            StringAssert.Contains("\"coins\":135", json);
+            Assert.IsTrue(ProgressSerializer.TryRead(json, out var data, out string problem), problem);
+            Assert.AreEqual(135, data.coins);
+            Assert.AreEqual(135, data.Clone().coins);
+        }
+
+        [Test]
+        public void Serializer_ReadsASaveFromBeforeCoins_AsZeroCoins_KeepingEverythingElse()
+        {
+            // Exactly what a build before issue #44 wrote: no "coins" field.
+            const string old = "{\"version\":1,\"highestUnlocked\":\"w1_l003\",\"levels\":[{\"id\":\"w1_l001\",\"stars\":3},"
+                + "{\"id\":\"w1_l002\",\"stars\":2}],\"tutorialsDone\":[\"match3\"]}";
+            Assert.IsTrue(ProgressSerializer.TryRead(old, out var data, out string problem), problem);
+            Assert.AreEqual(0, data.coins);
+            Assert.AreEqual("w1_l003", data.highestUnlocked);
+            Assert.AreEqual(2, data.levels.Count);
+            Assert.AreEqual(2, data.levels[1].stars);
+            CollectionAssert.AreEqual(new[] { "match3" }, data.tutorialsDone);
         }
 
         [TestCase("")]
@@ -74,6 +94,7 @@ namespace Game.Tests.EditMode
         [TestCase("{\"version\":1,\"levels\":[{\"id\":\"w1_l001\",\"stars\":0}]}")]
         [TestCase("{\"version\":1,\"levels\":[{\"id\":\"w1_l001\",\"stars\":4}]}")]
         [TestCase("{\"version\":1,\"levels\":[{\"id\":\"w1_l001\",\"stars\":3},{\"id\":\"w1_l001\",\"stars\":3}]}")]
+        [TestCase("{\"version\":1,\"levels\":[],\"coins\":-5}")] // negative wallet
         public void Serializer_RefusesBadSaves_WithAReason(string json)
         {
             Assert.IsFalse(ProgressSerializer.TryRead(json, out var data, out string problem));
@@ -203,7 +224,7 @@ namespace Game.Tests.EditMode
             var progress = Service(store);
             int changed = 0;
             progress.Changed += () => changed++;
-            progress.RecordWin("w1_l001", 3, "w1_l002");
+            progress.RecordWin("w1_l001", 3, "w1_l002", 0);
             Assert.AreEqual(1, changed);
             Assert.IsTrue(File.Exists(_path));
 
@@ -219,8 +240,8 @@ namespace Game.Tests.EditMode
         public void Service_KeepsBestStars()
         {
             var progress = Service(new FakeProgressStore());
-            progress.RecordWin("w1_l001", 3, "w1_l002");
-            progress.RecordWin("w1_l001", 1, "w1_l002");
+            progress.RecordWin("w1_l001", 3, "w1_l002", 0);
+            progress.RecordWin("w1_l001", 1, "w1_l002", 0);
             Assert.AreEqual(3, progress.GetStars("w1_l001"));
         }
 
@@ -256,7 +277,7 @@ namespace Game.Tests.EditMode
             Assert.AreEqual(ProgressLoadStatus.Unreadable, progress.LoadStatus);
             Assert.AreEqual(1, _warnings.Count);
 
-            progress.RecordWin("w1_l001", 3, "w1_l002");
+            progress.RecordWin("w1_l001", 3, "w1_l002", 0);
             progress.GetStars("w1_l001");
             Assert.AreEqual(1, _warnings.Count, "One warning, however much the game goes on.");
             Assert.AreEqual(3, Service(new JsonFileProgressStore(_path)).GetStars("w1_l001"), "Fresh progress is saved over it.");
@@ -267,8 +288,8 @@ namespace Game.Tests.EditMode
         {
             var store = new FakeProgressStore { FailSaves = true };
             var progress = Service(store);
-            progress.RecordWin("w1_l001", 3, "w1_l002");
-            progress.RecordWin("w1_l002", 3, "w1_l003");
+            progress.RecordWin("w1_l001", 3, "w1_l002", 0);
+            progress.RecordWin("w1_l002", 3, "w1_l003", 0);
             Assert.AreEqual(3, progress.GetStars("w1_l002"));
             Assert.AreEqual("w1_l003", progress.HighestUnlocked);
             Assert.AreEqual(1, _warnings.Count);
@@ -279,11 +300,143 @@ namespace Game.Tests.EditMode
         {
             var store = new FakeProgressStore();
             var progress = Service(store);
-            progress.RecordWin("w1_l001", 3, "w1_l002");
+            progress.RecordWin("w1_l001", 3, "w1_l002", 0);
             progress.Reset();
             Assert.AreEqual(0, progress.GetStars("w1_l001"));
             Assert.AreEqual(string.Empty, progress.HighestUnlocked);
             Assert.AreEqual(0, Service(store).GetStars("w1_l001"));
+        }
+
+        // ---- Coin wallet (issue #44) ----
+
+        [Test]
+        public void Wallet_StartsEmpty()
+        {
+            Assert.AreEqual(0, Service(new FakeProgressStore()).Coins);
+        }
+
+        [Test]
+        public void Wallet_Earn_AddsOnAWin_InTheSameSave_AndPersists()
+        {
+            var store = new FakeProgressStore();
+            var progress = Service(store);
+            progress.RecordWin("w1_l001", 3, "w1_l002", 20);
+            progress.RecordWin("w1_l002", 2, "w1_l003", 15);
+            Assert.AreEqual(35, progress.Coins);
+            Assert.AreEqual(2, store.SaveCount, "One save per win, coins included.");
+            Assert.AreEqual(35, Service(store).Coins, "A fresh launch reads the wallet back.");
+        }
+
+        [Test]
+        public void Wallet_Earn_RefusesNegativeCoins()
+        {
+            var progress = Service(new FakeProgressStore());
+            Assert.Throws<System.ArgumentOutOfRangeException>(() => progress.RecordWin("w1_l001", 3, "w1_l002", -1));
+            Assert.AreEqual(0, progress.Coins);
+            Assert.AreEqual(0, progress.GetStars("w1_l001"), "A refused win records nothing.");
+        }
+
+        [Test]
+        public void Wallet_Spend_Pays_Saves_AndRaisesChanged()
+        {
+            var store = new FakeProgressStore();
+            var progress = Service(store);
+            progress.RecordWin("w1_l001", 3, "w1_l002", 60);
+            int saves = store.SaveCount;
+            int changed = 0;
+            progress.Changed += () => changed++;
+
+            Assert.IsTrue(progress.TrySpendCoins(50));
+            Assert.AreEqual(10, progress.Coins);
+            Assert.AreEqual(saves + 1, store.SaveCount);
+            Assert.AreEqual(1, changed);
+            Assert.AreEqual(10, Service(store).Coins, "The spend is saved.");
+        }
+
+        [Test]
+        public void Wallet_Spend_ExactBalance_LeavesZero()
+        {
+            var progress = Service(new FakeProgressStore());
+            progress.RecordWin("w1_l001", 3, "w1_l002", 20);
+            Assert.IsTrue(progress.TrySpendCoins(20));
+            Assert.AreEqual(0, progress.Coins);
+        }
+
+        [Test]
+        public void Wallet_Spend_InsufficientFunds_ChangesNothing_AndDoesNotSave()
+        {
+            var store = new FakeProgressStore();
+            var progress = Service(store);
+            progress.RecordWin("w1_l001", 3, "w1_l002", 20);
+            int saves = store.SaveCount;
+            int changed = 0;
+            progress.Changed += () => changed++;
+
+            Assert.IsFalse(progress.TrySpendCoins(21));
+            Assert.AreEqual(20, progress.Coins);
+            Assert.AreEqual(saves, store.SaveCount);
+            Assert.AreEqual(0, changed);
+        }
+
+        [Test]
+        public void Wallet_Spend_FromEmpty_Fails()
+        {
+            var progress = Service(new FakeProgressStore());
+            Assert.IsFalse(progress.TrySpendCoins(1));
+            Assert.AreEqual(0, progress.Coins);
+        }
+
+        [Test]
+        public void Wallet_Spend_ZeroIsFree_AndNegativeThrows()
+        {
+            var store = new FakeProgressStore();
+            var progress = Service(store);
+            Assert.IsTrue(progress.TrySpendCoins(0));
+            Assert.AreEqual(0, store.SaveCount, "Nothing changed, nothing saved.");
+            Assert.Throws<System.ArgumentOutOfRangeException>(() => progress.TrySpendCoins(-10));
+            Assert.AreEqual(0, progress.Coins);
+        }
+
+        [Test]
+        public void Wallet_SaveFromBeforeCoins_LoadsWithoutWarning_AndEarnsFromZero()
+        {
+            var store = new FakeProgressStore
+            {
+                Json = "{\"version\":1,\"highestUnlocked\":\"w1_l002\",\"levels\":[{\"id\":\"w1_l001\",\"stars\":3}],\"tutorialsDone\":[]}",
+            };
+            var progress = Service(store);
+            Assert.AreEqual(ProgressLoadStatus.Loaded, progress.LoadStatus);
+            Assert.AreEqual(0, progress.Coins);
+            Assert.AreEqual(3, progress.GetStars("w1_l001"));
+            progress.RecordWin("w1_l002", 1, "w1_l003", 10);
+            Assert.AreEqual(10, Service(store).Coins);
+            Assert.AreEqual(3, Service(store).GetStars("w1_l001"));
+            CollectionAssert.IsEmpty(_warnings);
+        }
+
+        [Test]
+        public void Wallet_FileStore_RoundTripsCoinsAndBestStars()
+        {
+            var progress = Service(new JsonFileProgressStore(_path));
+            progress.RecordWin("w1_l001", 2, "w1_l002", 15);
+            progress.RecordWin("w1_l001", 1, "w1_l002", 10);
+            Assert.IsTrue(progress.TrySpendCoins(5));
+
+            var restarted = Service(new JsonFileProgressStore(_path));
+            Assert.AreEqual(20, restarted.Coins);
+            Assert.AreEqual(2, restarted.GetStars("w1_l001"), "Best stars kept, not the last.");
+            CollectionAssert.IsEmpty(_warnings);
+        }
+
+        [Test]
+        public void Wallet_Reset_EmptiesIt()
+        {
+            var store = new FakeProgressStore();
+            var progress = Service(store);
+            progress.RecordWin("w1_l001", 3, "w1_l002", 20);
+            progress.Reset();
+            Assert.AreEqual(0, progress.Coins);
+            Assert.AreEqual(0, Service(store).Coins);
         }
 
         [Test]

@@ -62,20 +62,20 @@ namespace Game.EditorTools
             tutorial.Configure(bootstrap, input); // L1, L2, L11 first-play cues (issue #57)
             EditorUtility.SetDirty(tutorial);
 
+            var hudObject = new GameObject("HUD");
+            var hud = hudObject.AddComponent<GameHud>();
+            hud.Configure(view, bootstrap, camera);
+            EditorUtility.SetDirty(hud);
+
             var panelsObject = new GameObject("Result Panels");
             var panels = panelsObject.AddComponent<ResultPanels>();
-            panels.Configure(view, bootstrap, camera);
+            panels.Configure(view, bootstrap, camera, hud); // Win coins fly from the card into the HUD pill (#44)
             EditorUtility.SetDirty(panels);
 
             var effectsObject = new GameObject("Board Effects");
             var effects = effectsObject.AddComponent<BoardEffects>();
             effects.Configure(view);
             EditorUtility.SetDirty(effects);
-
-            var hudObject = new GameObject("HUD");
-            var hud = hudObject.AddComponent<GameHud>();
-            hud.Configure(view, bootstrap, camera);
-            EditorUtility.SetDirty(hud);
 
             new GameObject("EventSystem", typeof(EventSystem), typeof(InputSystemUIInputModule));
 

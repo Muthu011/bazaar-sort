@@ -1,7 +1,9 @@
 {
     "name": "Game.Services",
     "rootNamespace": "Game.Services",
-    "references": [],
+    "references": [
+        "Game.Core"
+    ],
     "includePlatforms": [],
     "excludePlatforms": [],
     "allowUnsafeCode": false,

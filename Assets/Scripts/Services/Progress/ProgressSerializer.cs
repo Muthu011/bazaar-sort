@@ -8,7 +8,7 @@ namespace Game.Services
     /// Progress to and from JSON with Unity's built-in <c>JsonUtility</c> (no extra package). Reading is strict: anything
     /// that is not a complete, current-version save with sane values is refused with a reason, so the caller can fall
     /// back to fresh progress instead of trusting half a file.
-    /// <code>{"version":1,"highestUnlocked":"w1_l004","levels":[{"id":"w1_l001","stars":3}, ...],"tutorialsDone":["match3"]}</code>
+    /// <code>{"version":1,"highestUnlocked":"w1_l004","levels":[{"id":"w1_l001","stars":3}, ...],"tutorialsDone":["match3"],"coins":45}</code>
     /// </summary>
     public static class ProgressSerializer
     {
@@ -25,7 +25,7 @@ namespace Game.Services
         /// <summary>
         /// Parses <paramref name="json"/>. Returns false with <paramref name="problem"/> set when it is empty, not JSON,
         /// truncated, of another version, or holds invalid entries (empty or repeated ids, stars outside
-        /// 1..<see cref="ProgressRules.MaxStars"/>, empty or repeated tutorial keys).
+        /// 1..<see cref="ProgressRules.MaxStars"/>, empty or repeated tutorial keys, a negative coin balance).
         /// </summary>
         public static bool TryRead(string json, out ProgressData data, out string problem)
         {
@@ -101,6 +101,12 @@ namespace Game.Services
                     problem = $"tutorial {key} is listed twice";
                     return false;
                 }
+            }
+
+            if (parsed.coins < 0)
+            {
+                problem = $"coin balance is {parsed.coins}";
+                return false;
             }
 
             data = parsed;

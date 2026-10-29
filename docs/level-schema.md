@@ -64,6 +64,9 @@ A guide also ends when the level is won. Once it is done, the key is saved with 
 
 ## The `solver` block (issue #20)
 
+The game reads one field of this block at load time: `minMoves`, the number the star rule measures moves against
+(issue #44, docs/game-design.md "Stars and coins"). Every other field is for tools only.
+
 Written by the editor menu **Bazaar Sort/Run Solver on All Levels** (`Game.Solver.SolverRunner`), which rewrites only
 this one line of each file. Edit Mode `LevelPackTests` fail when a stored block disagrees with a fresh solve, so run the
 menu after every level change. Code: `Assets/Scripts/Editor/Solver/` (editor-only assembly `Game.Solver`). Every move

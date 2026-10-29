@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Game.Core;
 
 namespace Game.Services
 {
@@ -29,15 +30,13 @@ namespace Game.Services
     /// "More levels coming soon". A level added later (e.g. w1_l015) is unplayed, so the player continues there.</item>
     /// <item>A win unlocks the next level in order; the furthest unlock never goes backwards (replaying L1 keeps L8
     /// unlocked). Winning the last level keeps it as the furthest unlock.</item>
-    /// <item>Stars: always <see cref="MaxStars"/> for now (Muthu, #21); the best count per level is kept.</item>
+    /// <item>Stars and coins for a win come from <see cref="WinRewards"/> (issue #44); the best star count per level is
+    /// kept. A first win pays the full amount; a replay pays only for stars above the previous best (Muthu, PR #63).</item>
     /// </list>
     /// </summary>
     public static class ProgressRules
     {
-        public const int MaxStars = 3;
-
-        /// <summary>Stars a win earns. Always 3 until star thresholds are designed (Muthu, #21).</summary>
-        public static int StarsForWin() => MaxStars;
+        public const int MaxStars = WinRewards.MaxStars;
 
         public static ContinuePoint Continue(IReadOnlyList<string> levelIds, IProgressService progress)
         {
@@ -74,15 +73,33 @@ namespace Game.Services
             return index >= 0 && index < levelIds.Count && index <= HighestUnlockedIndex(levelIds, progress);
         }
 
-        /// <summary>Records a win of level <paramref name="index"/> and unlocks the one after it (one save).</summary>
-        public static void RecordWin(IReadOnlyList<string> levelIds, IProgressService progress, int index)
+        /// <summary>
+        /// Coins a win of level <paramref name="index"/> with <paramref name="stars"/> stars would earn now, against the
+        /// level's saved best stars (<see cref="WinRewards.CoinsForWin"/>). Reads only; <see cref="RecordWin"/> pays it.
+        /// </summary>
+        public static int CoinsForWin(IReadOnlyList<string> levelIds, IProgressService progress, int index, int stars,
+            RewardConfig config = null)
         {
             if (levelIds == null) throw new ArgumentNullException(nameof(levelIds));
             if (progress == null) throw new ArgumentNullException(nameof(progress));
             if (index < 0 || index >= levelIds.Count) throw new ArgumentOutOfRangeException(nameof(index));
+            return WinRewards.CoinsForWin(stars, progress.GetStars(levelIds[index]), config);
+        }
 
+        /// <summary>
+        /// Records a win of level <paramref name="index"/> with <paramref name="stars"/> stars (see
+        /// <see cref="WinRewards.StarsFor"/>), adds its coins (<see cref="CoinsForWin"/>: full on a first win, only the
+        /// stars above the old best on a replay) and unlocks the level after it, all in one save. Returns the coins added.
+        /// <paramref name="config"/> null means <see cref="RewardConfig.Default"/>.
+        /// </summary>
+        public static int RecordWin(IReadOnlyList<string> levelIds, IProgressService progress, int index, int stars,
+            RewardConfig config = null)
+        {
+            int coins = CoinsForWin(levelIds, progress, index, stars, config);
             int unlocked = Math.Max(HighestUnlockedIndex(levelIds, progress), Math.Min(index + 1, levelIds.Count - 1));
-            progress.RecordWin(levelIds[index], StarsForWin(), levelIds[unlocked]);
+            stars = Math.Min(MaxStars, Math.Max(WinRewards.MinStars, stars));
+            progress.RecordWin(levelIds[index], stars, levelIds[unlocked], coins);
+            return coins;
         }
     }
 }

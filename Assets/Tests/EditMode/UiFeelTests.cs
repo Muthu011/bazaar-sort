@@ -32,7 +32,7 @@ namespace Game.Tests.EditMode
         [Test]
         public void Stars_AreThree_DroppingOneAtATime()
         {
-            Assert.AreEqual(3, UiFeel.WinStars, "Muthu: always 3 stars for now.");
+            Assert.AreEqual(3, UiFeel.WinStars, "Three star slots: one per possible star.");
             for (int i = 1; i < UiFeel.WinStars; i++)
             {
                 Assert.Greater(UiFeel.StarStart(i), UiFeel.StarStart(i - 1), "One at a time.");

@@ -2,6 +2,7 @@ using System.Collections;
 using System.IO;
 using System.Linq;
 using Game.Levels;
+using Game.Core;
 using Game.Services;
 using Game.UI;
 using Game.View;
@@ -29,6 +30,8 @@ namespace Game.Tests.PlayMode
         private BoardView _view;
         private LevelBootstrap _bootstrap;
         private ResultPanels _panels;
+        private GameObject _hudObject;
+        private GameHud _hud;
 
         [SetUp]
         public void SetUp()
@@ -48,8 +51,11 @@ namespace Game.Tests.PlayMode
             if (Directory.Exists(_dir)) Directory.Delete(_dir, true);
         }
 
-        /// <summary>Opens the "app": a fresh service over the save file, then camera, view, bootstrap and result panels.</summary>
-        private IEnumerator Launch()
+        /// <summary>
+        /// Opens the "app": a fresh service over the save file, then camera, view, bootstrap and result panels; with
+        /// <paramref name="withHud"/> also the HUD, wired to the panels like the game scene (Win coins fly into its pill).
+        /// </summary>
+        private IEnumerator Launch(bool withHud = false)
         {
             _cameraObject = new GameObject("Test Camera");
             _camera = _cameraObject.AddComponent<Camera>();
@@ -61,7 +67,13 @@ namespace Game.Tests.PlayMode
             _bootstrap.Progress = new ProgressService(new JsonFileProgressStore(_path), _ => Assert.Fail("No warning expected."));
             _panelsObject = new GameObject("Result Panels");
             _panels = _panelsObject.AddComponent<ResultPanels>();
-            _panels.Configure(_view, _bootstrap, _camera);
+            if (withHud)
+            {
+                _hudObject = new GameObject("HUD");
+                _hud = _hudObject.AddComponent<GameHud>();
+                _hud.Configure(_view, _bootstrap, _camera);
+            }
+            _panels.Configure(_view, _bootstrap, _camera, _hud);
             yield return null; // Start: bootstrap continues, panels build
             yield return null;
         }
@@ -69,6 +81,9 @@ namespace Game.Tests.PlayMode
         /// <summary>Closes the "app": every object goes, nothing stays in memory but the file.</summary>
         private void Quit()
         {
+            if (_hudObject != null) Object.DestroyImmediate(_hudObject);
+            _hudObject = null;
+            _hud = null;
             if (_panelsObject != null) Object.DestroyImmediate(_panelsObject);
             if (_gameObject != null) Object.DestroyImmediate(_gameObject);
             if (_cameraObject != null) Object.DestroyImmediate(_cameraObject);
@@ -86,11 +101,34 @@ namespace Game.Tests.PlayMode
             Assert.IsTrue(board.IsWon);
         }
 
+        /// <summary>
+        /// w1_l001 (minMoves 3) won after <paramref name="detours"/> pairs of wasted moves: the masala dabba on s4 goes
+        /// to s1 and straight back, which clears nothing, then the winning line.
+        /// </summary>
+        private void WinW1L001WithDetours(int detours)
+        {
+            Assert.AreEqual("w1_l001", _bootstrap.CurrentLevelName);
+            var board = _view.Board;
+            for (int i = 0; i < detours; i++)
+            {
+                Assert.IsTrue(board.TryMove(3, 0, 0), "s4 dabba onto s1");
+                Assert.IsTrue(board.TryMove(0, 2, 3), "and back to s4");
+            }
+            Assert.IsFalse(board.IsWon);
+            WinW1L001();
+        }
+
+        private IEnumerator WaitForWinCard()
+        {
+            for (float t = 0f; !_panels.IsWinVisible && t < 5f; t += Time.unscaledDeltaTime) yield return null;
+            Assert.IsTrue(_panels.IsWinVisible, "Win card shown.");
+        }
+
         private void Seed(int wonCount)
         {
             var progress = new ProgressService(new JsonFileProgressStore(_path), _ => { });
             var ids = _levels.Select(l => l.name).ToArray();
-            for (int i = 0; i < wonCount; i++) ProgressRules.RecordWin(ids, progress, i);
+            for (int i = 0; i < wonCount; i++) ProgressRules.RecordWin(ids, progress, i, ProgressRules.MaxStars);
         }
 
         [UnityTest]
@@ -118,6 +156,213 @@ namespace Game.Tests.PlayMode
             Assert.AreEqual(3, _bootstrap.Progress.GetStars("w1_l001"));
             Assert.AreEqual("w1_l002", _bootstrap.Progress.HighestUnlocked);
             Assert.IsFalse(_panels.IsMoreLevelsVisible);
+        }
+
+        // ---- Stars and coins (issue #44) ----
+
+        [UnityTest]
+        public IEnumerator Win_InTheMinimum_Earns3Stars_And20Coins_SavedAndOnTheWinCard()
+        {
+            yield return Launch();
+            WinW1L001();
+            Assert.AreEqual(3, _bootstrap.MovesMade);
+            Assert.AreEqual(3, _bootstrap.LastWinStars);
+            Assert.AreEqual(20, _bootstrap.LastWinCoins);
+            yield return WaitForWinCard();
+            Assert.AreEqual(3, _panels.WinStarsLit);
+
+            Quit();
+            yield return null;
+            yield return Launch();
+            Assert.AreEqual(3, _bootstrap.Progress.GetStars("w1_l001"));
+            Assert.AreEqual(20, _bootstrap.Progress.Coins, "Coins are saved with progress.");
+        }
+
+        [UnityTest]
+        public IEnumerator Win_WithExtraMoves_EarnsFewerStars_AndBestStarsAreKept()
+        {
+            yield return Launch();
+            WinW1L001WithDetours(2); // 7 moves: over 4.5, at most 7.5 -> 2 stars
+            Assert.AreEqual(7, _bootstrap.MovesMade);
+            Assert.AreEqual(2, _bootstrap.LastWinStars);
+            Assert.AreEqual(15, _bootstrap.LastWinCoins, "First win, 2 stars: 10 + 5.");
+            yield return WaitForWinCard();
+            Assert.AreEqual(2, _panels.WinStarsLit, "Two lit, one empty.");
+            Assert.IsTrue(_panels.IsWinCoinsLineVisible);
+            Assert.AreEqual("+15", _panels.WinCoinsLabel.text);
+
+            _bootstrap.Retry();
+            Assert.AreEqual(0, _bootstrap.MovesMade, "Retry starts the move count again.");
+            WinW1L001WithDetours(3); // 9 moves: over 7.5 -> 1 star
+            Assert.AreEqual(1, _bootstrap.LastWinStars);
+            Assert.AreEqual(0, _bootstrap.LastWinCoins, "Replay with fewer stars than the best (2): nothing.");
+            yield return WaitForWinCard();
+            Assert.AreEqual(1, _panels.WinStarsLit);
+            Assert.IsFalse(_panels.IsWinCoinsLineVisible, "No coin line for 0 coins.");
+
+            _bootstrap.Retry();
+            WinW1L001();
+            Assert.AreEqual(3, _bootstrap.LastWinStars);
+            Assert.AreEqual(5, _bootstrap.LastWinCoins, "Replay with one star above the best: 5.");
+
+            Quit();
+            yield return null;
+            yield return Launch();
+            Assert.AreEqual(3, _bootstrap.Progress.GetStars("w1_l001"), "Best stars, raised by the last win.");
+            Assert.AreEqual(15 + 0 + 5, _bootstrap.Progress.Coins, "Same total as a 3-star first win.");
+        }
+
+        [UnityTest]
+        public IEnumerator Hud_ShowsTheWallet_AndFollowsWinsAndSpends()
+        {
+            // w1_l001 won with 1 star (10), w1_l002 with 3 (20): 30 coins.
+            var seeded = new ProgressService(new JsonFileProgressStore(_path), _ => { });
+            var ids = _levels.Select(l => l.name).ToArray();
+            ProgressRules.RecordWin(ids, seeded, 0, 1);
+            ProgressRules.RecordWin(ids, seeded, 1, 3);
+            yield return Launch();
+            var hudObject = new GameObject("HUD");
+            try
+            {
+                // This HUD isn't wired to the result panels, so nothing holds a win's coins back for a flight.
+                var hud = hudObject.AddComponent<GameHud>();
+                hud.Configure(_view, _bootstrap, _camera);
+                yield return null; // HUD builds
+                Assert.AreEqual("30", hud.CountText);
+
+                _bootstrap.ReplayFromFirst();
+                WinW1L001(); // 3 stars over a best of 1: +10
+                Assert.AreEqual("40", hud.CountText, "Without the Win card's flight a win's coins show at once.");
+
+                _bootstrap.ReplayFromFirst();
+                WinW1L001(); // 3 stars again: nothing new
+                Assert.AreEqual("40", hud.CountText, "A replay with no new star adds nothing.");
+
+                Assert.IsTrue(_bootstrap.Progress.TrySpendCoins(30));
+                Assert.AreEqual("10", hud.CountText, "A spend shows at once.");
+                Assert.IsFalse(_bootstrap.Progress.TrySpendCoins(11));
+                Assert.AreEqual("10", hud.CountText);
+            }
+            finally
+            {
+                Object.DestroyImmediate(hudObject);
+            }
+        }
+
+        // ---- Win card coins into the HUD pill (PR #63) ----
+
+        [UnityTest]
+        public IEnumerator WinCard_ShowsPlusN_AndItsCoinsFlyIntoThePill_WhichCountsUpWithoutAJump()
+        {
+            yield return Launch(withHud: true);
+            yield return null; // HUD builds
+            Assert.AreEqual("0", _hud.CountText);
+
+            WinW1L001(); // first win, 3 stars: 20
+            Assert.AreEqual(20, _bootstrap.Progress.Coins, "Saved the moment the board is won.");
+            Assert.AreEqual(20, new ProgressService(new JsonFileProgressStore(_path), _ => { }).Coins, "On disk too.");
+            Assert.AreEqual("0", _hud.CountText, "The pill doesn't jump before the Win card.");
+            Assert.AreEqual(20, _hud.HeldCoins);
+
+            int lowest = int.MaxValue;
+            int last = 0;
+            int steps = 0;
+            for (float t = 0f; !_panels.IsWinVisible && t < 5f; t += Time.unscaledDeltaTime)
+            {
+                Assert.AreEqual(0, _hud.ShownBalance, "Still the old balance while the clears play out.");
+                yield return null;
+            }
+            Assert.IsTrue(_panels.IsWinVisible);
+            Assert.IsTrue(_panels.IsWinCoinsLineVisible);
+            Assert.AreEqual("+20", _panels.WinCoinsLabel.text);
+            Assert.AreEqual(WinCoinsText.For(20), _panels.WinCoinsLabel.text, "From the keyed string.");
+
+            bool sawFlight = false;
+            for (float t = 0f; (_hud.HeldCoins > 0 || _hud.CoinsInFlight > 0) && t < 5f; t += Time.unscaledDeltaTime)
+            {
+                if (_hud.CoinsInFlight > 0)
+                {
+                    sawFlight = true;
+                    Assert.IsTrue(_hud.IsPillLifted, "The pill rises over the card's backdrop while coins fly in.");
+                }
+                int shown = _hud.ShownBalance;
+                Assert.GreaterOrEqual(shown, last, "Only counts up.");
+                if (shown != last) steps++;
+                last = shown;
+                lowest = Mathf.Min(lowest, shown);
+                yield return null;
+            }
+            if (_hud.ShownBalance != last) steps++; // the last landing ends the loop
+            Assert.IsTrue(sawFlight, "Coins flew from the Win card.");
+            Assert.AreEqual(0, lowest, "Started from the old balance.");
+            Assert.AreEqual(UiFeel.CoinsFlownFor(20), steps, "One step per landing coin.");
+            Assert.AreEqual(20, _hud.ShownBalance);
+            Assert.AreEqual("20", _hud.CountText);
+            Assert.AreEqual(0, _hud.HeldCoins);
+
+            _panels.WinNextButton.onClick.Invoke();
+            Assert.IsFalse(_hud.IsPillLifted, "Back under the backdrop on the next level.");
+            Assert.AreEqual("20", _hud.CountText);
+        }
+
+        [UnityTest]
+        public IEnumerator WinCard_ReplayWithNoNewStar_HasNoCoinLine_AndThePillStays()
+        {
+            Seed(1); // w1_l001 at 3 stars: 20 coins
+            yield return Launch(withHud: true);
+            yield return null;
+            _bootstrap.ReplayFromFirst();
+            Assert.AreEqual("20", _hud.CountText);
+            WinW1L001();
+            Assert.AreEqual(0, _bootstrap.LastWinCoins);
+            yield return WaitForWinCard();
+            Assert.IsFalse(_panels.IsWinCoinsLineVisible, "0 coins: the line is hidden, not \"+0\".");
+            for (int i = 0; i < 90; i++)
+            {
+                Assert.AreEqual(0, _hud.CoinsInFlight);
+                Assert.AreEqual("20", _hud.CountText);
+                yield return null;
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator WinCard_LeftMidFlight_ShowsTheWholeBalanceAtOnce()
+        {
+            yield return Launch(withHud: true);
+            yield return null;
+            WinW1L001();
+            yield return WaitForWinCard();
+            for (float t = 0f; _hud.CoinsInFlight == 0 && t < 5f; t += Time.unscaledDeltaTime) yield return null;
+            Assert.Greater(_hud.CoinsInFlight, 0);
+            _panels.WinNextButton.onClick.Invoke();
+            Assert.AreEqual(0, _hud.CoinsInFlight, "Coins dropped on the level load.");
+            Assert.AreEqual("20", _hud.CountText, "Nothing is lost: the full wallet shows.");
+            Assert.IsFalse(_hud.IsPillLifted);
+        }
+
+        [UnityTest]
+        public IEnumerator Pill_WidensForFiveDigits_AndNeverShrinksTheText()
+        {
+            yield return Launch(withHud: true);
+            yield return null;
+            var progress = _bootstrap.Progress;
+            int[] balances = { 7, 20, 999, 1250, 99999, 250000 };
+            int wallet = 0;
+            foreach (int balance in balances)
+            {
+                // Spend or earn straight through the service to reach the balance (no win needed).
+                if (balance > wallet) progress.RecordWin("w9_test", 1, progress.HighestUnlocked, balance - wallet);
+                else Assert.IsTrue(progress.TrySpendCoins(wallet - balance));
+                wallet = balance;
+                Canvas.ForceUpdateCanvases();
+                string text = CoinBalanceText.For(balance);
+                Assert.AreEqual(text, _hud.CountText);
+                Assert.AreEqual(HudLayout.CounterWidthFor(text), _hud.CounterRect.sizeDelta.x, 0.001f, text);
+                var label = _hud.CountLabel;
+                Assert.IsFalse(label.resizeTextForBestFit, "Never shrinks to fit.");
+                Assert.AreEqual(HudLayout.CounterFontDp, label.fontSize);
+                Assert.LessOrEqual(label.preferredWidth, label.rectTransform.rect.width + 0.5f, $"{text} fits its box at full size.");
+            }
         }
 
         [UnityTest]

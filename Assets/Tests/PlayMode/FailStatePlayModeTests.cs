@@ -144,7 +144,7 @@ namespace Game.Tests.PlayMode
             // The player has already won w1_l001, so the game continues at the fail level.
             var store = new FakeProgressStore();
             var progress = new ProgressService(store, _ => Assert.Fail("No warning expected."));
-            ProgressRules.RecordWin(new[] { "w1_l001", "test_fail" }, progress, 0);
+            ProgressRules.RecordWin(new[] { "w1_l001", "test_fail" }, progress, 0, ProgressRules.MaxStars);
             int savesBefore = store.SaveCount;
             string savedBefore = store.Json;
             string unlockedBefore = progress.HighestUnlocked;

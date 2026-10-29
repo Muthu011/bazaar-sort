@@ -1,11 +1,12 @@
 using System;
+using Game.Core;
 using UnityEngine;
 
 namespace Game.Services
 {
     /// <summary>
     /// <see cref="IProgressService"/> over an <see cref="IProgressStore"/>: read once, on first use; written on every
-    /// win. An unreadable save, or a save that fails to write, never stops the game: play goes on with what is in memory
+    /// win and every coin spend. An unreadable save, or a save that fails to write, never stops the game: play goes on with what is in memory
     /// and one warning is logged per service (so per app launch), however often it happens.
     /// </summary>
     public sealed class ProgressService : IProgressService
@@ -55,9 +56,19 @@ namespace Game.Services
             return 0;
         }
 
-        public void RecordWin(string levelId, int stars, string highestUnlocked)
+        public int Coins
+        {
+            get
+            {
+                EnsureLoaded();
+                return _data.coins;
+            }
+        }
+
+        public void RecordWin(string levelId, int stars, string highestUnlocked, int coinsEarned)
         {
             if (string.IsNullOrEmpty(levelId)) throw new ArgumentException("A level id is required.", nameof(levelId));
+            if (coinsEarned < 0) throw new ArgumentOutOfRangeException(nameof(coinsEarned), "Earned coins can't be negative.");
             EnsureLoaded();
             stars = Mathf.Clamp(stars, 1, ProgressRules.MaxStars);
 
@@ -70,8 +81,21 @@ namespace Game.Services
             else existing.stars = Math.Max(existing.stars, stars);
 
             if (!string.IsNullOrEmpty(highestUnlocked)) _data.highestUnlocked = highestUnlocked;
+            _data.coins = WinRewards.AddCoins(_data.coins, coinsEarned);
             Save();
             Changed?.Invoke();
+        }
+
+        public bool TrySpendCoins(int price)
+        {
+            if (price < 0) throw new ArgumentOutOfRangeException(nameof(price), "A price can't be negative.");
+            EnsureLoaded();
+            if (!WinRewards.CanAfford(_data.coins, price)) return false;
+            if (price == 0) return true;
+            _data.coins -= price;
+            Save();
+            Changed?.Invoke();
+            return true;
         }
 
         public bool IsTutorialDone(string tutorialKey)

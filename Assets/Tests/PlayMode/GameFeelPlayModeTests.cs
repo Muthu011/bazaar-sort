@@ -21,7 +21,7 @@ using Object = UnityEngine.Object;
 namespace Game.Tests.PlayMode
 {
     /// <summary>
-    /// Issue #21 game feel end to end: pick-up squash and shadow, the arc move, clear burst with the coin and counter,
+    /// Issue #21 game feel end to end: pick-up squash and shadow, the arc move, clear burst and clear tally (no coin since PR #63),
     /// reveal bounce, Win stars and confetti, button press, haptics (through the fake device and settings), and the
     /// zero-allocation check over all of it with DOTween's own update path included.
     /// </summary>
@@ -225,16 +225,19 @@ namespace Game.Tests.PlayMode
             Assert.IsNull(_view.GetFrontLetter(2, 0), "Source slot is empty.");
         }
 
-        // ---- Clear: burst, coin, counter ----
+        // ---- Clear: burst and tally ----
 
         [UnityTest]
-        public IEnumerator Clear_BurstsAndFliesACoin_CounterTicksOnLanding_AndResetsOnLoad()
+        public IEnumerator Clear_Bursts_CountsOnce_FliesNoCoin_AndResetsOnLoad()
         {
+            // The clear tally (hud.Counter.Cleared) counts every clear at once; a clear flies no coin (PR #63). The pill
+            // text is the wallet (issue #44), which clears never change: without saved progress it reads 0 throughout.
             var bootstrap = AddBootstrap(W1L001, W1L002);
             var effects = AddEffects();
             var hud = AddHud(bootstrap);
             yield return null; // Start: level loads, HUD builds
             yield return null;
+            Assert.AreEqual(0, hud.Counter.Cleared);
             Assert.AreEqual("0", hud.CountText);
 
             var board = _view.Board;
@@ -242,12 +245,10 @@ namespace Game.Tests.PlayMode
             _view.AdvanceAnimations(FeelMotion.ArcSeconds + ClearRevealMotion.ClearPopSeconds + 0.001f);
             Assert.AreEqual(1, effects.BurstCount, "Burst at the top of the pop.");
             Assert.GreaterOrEqual(effects.Burst.particleCount, ParticleFx.BurstItemSparks, "Sparks emitted.");
-            Assert.AreEqual(1, hud.CoinsInFlight, "A coin flies to the counter.");
-            Assert.AreEqual("0", hud.CountText, "The number waits for the coin.");
+            Assert.AreEqual(0, hud.CoinsInFlight, "A clear flies no coin (PR #63).");
+            Assert.AreEqual(1, hud.Counter.Cleared, "The clear is counted at once.");
             Assert.AreEqual(1, _device.LightCount, "Light haptic on the clear.");
-
-            yield return WaitUntil(() => hud.CoinsInFlight == 0);
-            Assert.AreEqual("1", hud.CountText, "Ticks up by one as the coin lands.");
+            Assert.AreEqual("0", hud.CountText, "A clear earns no coins: the wallet is unchanged.");
             yield return WaitUntil(() => !_view.IsAnimating);
             for (int slot = 0; slot < Shelf.SlotCount; slot++)
             {
@@ -256,14 +257,17 @@ namespace Game.Tests.PlayMode
                 AssertNear(_view.GetFrontTileHome(0, slot), _view.GetFrontTilePixelPosition(0, slot), $"s1 slot {slot} home");
             }
 
+            Assert.AreEqual(1, hud.Counter.Cleared, "Still one clear once it has played out.");
+
             bootstrap.Retry();
-            Assert.AreEqual("0", hud.CountText, "Retry resets the counter.");
+            Assert.AreEqual(0, hud.Counter.Cleared, "Retry resets the counter.");
             Assert.IsTrue(_view.Board.TryMove(1, 1, 0));
-            _view.CompleteAnimations(); // skipped pop: counts at once, no coin
-            Assert.AreEqual("1", hud.CountText);
+            _view.CompleteAnimations(); // skipped pop: counts at once
+            Assert.AreEqual(1, hud.Counter.Cleared);
             Assert.AreEqual(0, hud.CoinsInFlight);
             Assert.IsTrue(bootstrap.Next());
-            Assert.AreEqual("0", hud.CountText, "Next resets the counter.");
+            Assert.AreEqual(0, hud.Counter.Cleared, "Next resets the counter.");
+            Assert.AreEqual("0", hud.CountText);
         }
 
         [UnityTest]
@@ -276,10 +280,10 @@ namespace Game.Tests.PlayMode
 
             Assert.IsTrue(_view.Board.TryMove(1, 0, 0)); // tumblers fly to s1 and will clear
             Assert.IsTrue(_view.Board.TryMove(2, 0, 0)); // idli stand onto s1 at once: the clear snaps
-            Assert.AreEqual("1", hud.CountText, "Counted at once, without a coin.");
+            Assert.AreEqual(1, hud.Counter.Cleared, "Counted at once.");
             Assert.AreEqual(0, hud.CoinsInFlight);
             yield return WaitUntil(() => !_view.IsAnimating);
-            Assert.AreEqual("1", hud.CountText, "Never counted twice.");
+            Assert.AreEqual(1, hud.Counter.Cleared, "Never counted twice.");
         }
 
         // ---- Reveal ----
@@ -330,7 +334,8 @@ namespace Game.Tests.PlayMode
             Assert.IsTrue(_view.Board.TryMove(0, 0, 1));
             yield return WaitUntil(() => _view.Outcome != BoardOutcome.None);
             Assert.IsTrue(panels.IsWinVisible);
-            Assert.AreEqual(3, panels.WinStars.Length, "Always 3 stars for now.");
+            Assert.AreEqual(3, panels.WinStars.Length, "Three star slots.");
+            Assert.AreEqual(3, panels.WinStarsLit, "No level list wired: all three lit.");
             Assert.IsFalse(panels.AreStarsAtRest, "Stars are still dropping in.");
 
             var landed = new float[3] { -1f, -1f, -1f };
@@ -456,7 +461,7 @@ namespace Game.Tests.PlayMode
         }
 
         [UnityTest]
-        public IEnumerator Feel_AllocatesNothing_OverArcClearCoinRevealAndStarDrop()
+        public IEnumerator Feel_AllocatesNothing_OverArcClearRevealAndStarDrop()
         {
             var effects = AddEffects();
             var hud = AddHud();
@@ -480,10 +485,10 @@ namespace Game.Tests.PlayMode
             panels.Hide();
             hud.ResetCounter();
             yield return null;
-            Assert.IsTrue(_view.Board.TryMove(0, 0, 1)); // flight + reveal, clear, clear (bursts, coins), Won, stars
+            Assert.IsTrue(_view.Board.TryMove(0, 0, 1)); // flight + reveal, clear, clear (bursts), Won, stars
             int burstsBefore = effects.BurstCount;
 
-            // 150 frames at 60 fps: flight 0.25 s + clear 0.35 s, coins 0.5 s, stars 0.83 s, confetti.
+            // 150 frames at 60 fps: flight 0.25 s + clear 0.35 s, stars 0.83 s, confetti.
             Assert.That(() =>
             {
                 for (int i = 0; i < 150; i++)
@@ -495,10 +500,60 @@ namespace Game.Tests.PlayMode
 
             Assert.AreEqual(BoardOutcome.Won, _view.Outcome);
             Assert.AreEqual(2, effects.BurstCount - burstsBefore, "Both clears burst inside the measured frames.");
-            Assert.AreEqual("2", hud.CountText, "Both coins landed inside the measured frames.");
+            Assert.AreEqual(2, hud.Counter.Cleared, "Both clears counted inside the measured frames.");
             Assert.IsTrue(panels.IsWinVisible);
             Assert.IsTrue(panels.AreStarsAtRest, "Star drop finished inside the measured frames.");
             Assert.GreaterOrEqual(panels.ConfettiBursts, 2, "Confetti started inside the measured frames.");
+        }
+
+        [UnityTest]
+        public IEnumerator WinCoins_FlyIntoThePill_AllocatingNothing()
+        {
+            // The game scene wiring: bootstrap with progress, HUD, and the Win card connected to the HUD (PR #63).
+            var bootstrap = AddBootstrap(W1L001, W1L002);
+            bootstrap.Progress = new ProgressService(new FakeProgressStore(), _ => { });
+            var hud = AddHud(bootstrap);
+            var panels = Make("Result Panels").AddComponent<ResultPanels>();
+            panels.Configure(_view, bootstrap, _camera, hud);
+            yield return null;
+            yield return null;
+            var tweens = TweenUpdate();
+            float flight = UiFeel.StarsSeconds + UiFeel.CoinsSecondsFor(UiFeel.CoinPool) + 0.2f;
+            int frames = Mathf.CeilToInt(flight / Frame);
+
+            // Warm-up: a whole first win and its coin flight (JIT, first tween startups, first canvas work).
+            WinW1L001OnView();
+            Assert.IsTrue(panels.IsWinVisible);
+            for (int i = 0; i < frames; i++) tweens(UpdateType.Normal, Frame, Frame);
+            Assert.AreEqual("20", hud.CountText, "Warm-up landed its coins.");
+            yield return null;
+
+            // Measured: a second first win (fresh progress), from the Win card on, while its coins fly and land.
+            bootstrap.Progress = new ProgressService(new FakeProgressStore(), _ => { });
+            bootstrap.Retry();
+            Assert.AreEqual("0", hud.CountText);
+            WinW1L001OnView();
+            Assert.IsTrue(panels.IsWinVisible);
+            Assert.IsTrue(panels.IsWinCoinsLineVisible);
+            Assert.AreEqual("0", hud.CountText, "Held until the coins land.");
+            Assert.That(() =>
+            {
+                for (int i = 0; i < frames; i++) tweens(UpdateType.Normal, Frame, Frame);
+            }, Is.Not.AllocatingGCMemory());
+            Assert.AreEqual(0, hud.CoinsInFlight);
+            Assert.AreEqual("20", hud.CountText, "Every coin landed inside the measured frames.");
+        }
+
+        /// <summary>w1_l001's winning line (pack-1.md), its animations stepped by hand until the outcome card shows.</summary>
+        private void WinW1L001OnView()
+        {
+            var board = _view.Board;
+            Assert.IsTrue(board.TryMove(1, 1, 0));
+            Assert.IsTrue(board.TryMove(2, 2, 1));
+            Assert.IsTrue(board.TryMove(3, 0, 2));
+            Assert.IsTrue(board.IsWon);
+            for (int i = 0; i < 300 && _view.IsAnimating; i++) _view.AdvanceAnimations(Frame);
+            _view.AdvanceAnimations(Frame);
         }
 
         [UnityTest]
@@ -514,7 +569,7 @@ namespace Game.Tests.PlayMode
             yield return null;
             yield return null;
 
-            // w1_l005's winning line (pack-1.md), one move every 6 frames: flights, clears, reveals and coins overlap.
+            // w1_l005's winning line (pack-1.md), one move every 6 frames: flights, clears and reveals overlap.
             int[] line = { 3,1,5, 0,0,1, 4,1,0, 0,0,1, 0,1,2, 1,2,2, 0,2,1, 1,0,0, 3,0,1, 0,0,2, 1,0,0, 0,0,2, 1,1,0, 0,0,1, 1,0,2, 4,0,1, 2,1,1, 3,2,2 };
             var frameMs = new List<double>(512);
             var loopMs = new List<double>(512);
