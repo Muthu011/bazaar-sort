@@ -42,6 +42,7 @@ Sat = HSV saturation, Val = HSV value. Greyscale = approximate luma (0 black to 
 | Accent support | Kumkum red | #B3321F | Pressure cooker, warnings, fail panel |
 | Accent support | Peacock blue | #1F6F8B | Steel tiffin, links, info |
 | Accent support | Banana-leaf green | #4E9A5A | Rolling pin, success, win panel |
+| UI success dark | Leaf dark | #2E6F4E | Win panel fill (white text). Not used on objects |
 | Accent support | Jamun purple | #6B4A8A | Chai kettle |
 | Coconut wood | Coconut brown | #8A5A33 | Coconut scraper body |
 | Idli | Idli white | #F4EFE2 | Idlis. Slightly warm, never #FFFFFF |
@@ -67,7 +68,7 @@ Contrast checks (WCAG 2.1, contrast ratio):
 | Roasted brown on Turmeric #F2B632 (button) | 7.9 : 1 | AA and AAA |
 | White on Peacock blue #1F6F8B (button) | 5.7 : 1 | AA (body text) |
 | White on Kumkum red #B3321F | 6.2 : 1 | AA |
-| White on Banana-leaf green #2E6F4E (dark variant for text panels) | 6.0 : 1 | AA |
+| White on Banana-leaf green #2E6F4E (Leaf dark, for text panels) | 6.0 : 1 | AA |
 | White on Night slate #2A3A44 | 11.8 : 1 | AA and AAA |
 
 - Do not put white text on the lighter #4E9A5A green or on Turmeric. Use Roasted brown there.
