@@ -7,7 +7,8 @@ namespace Game.Levels
     /// One level file (docs/level-schema.md, v1) as plain data, before validation.
     /// <see cref="LevelParser"/> fills it from JSON; <see cref="LevelValidator"/> checks it; <see cref="LevelLoader"/>
     /// turns it into a <see cref="Game.Core.Board"/>. A field missing from the file (or JSON null) is null here, so the
-    /// validator can say so. The <c>solver</c> block is written by the solver tool and not read at load time.
+    /// validator can say so. Of the <c>solver</c> block (written by the solver tool) only <c>minMoves</c> is read, for
+    /// the star rule (issue #44).
     /// </summary>
     public sealed class LevelData
     {
@@ -34,6 +35,12 @@ namespace Game.Levels
 
         /// <summary>Null means no timer.</summary>
         public int? TimeLimitSec { get; set; }
+
+        /// <summary>
+        /// <c>solver.minMoves</c>: the shortest win, which stars are measured against (<c>Game.Core.WinRewards</c>).
+        /// Null when the file has no solver block or no minMoves (unstamped or test levels).
+        /// </summary>
+        public int? MinMoves { get; set; }
 
         /// <summary>Null when the file has no <c>shelves</c> field.</summary>
         public List<ShelfData> Shelves { get; set; }

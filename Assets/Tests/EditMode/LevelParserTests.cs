@@ -56,6 +56,7 @@ namespace Game.Tests.EditMode
             Assert.AreEqual("t1", level.Trays[0].Id);
             CollectionAssert.AreEqual(new[] { "idli_plate", "sambar_bowl" }, level.Trays[0].Set);
             CollectionAssert.AreEqual(new[] { "s1:1:0" }, level.Wrapped);
+            Assert.AreEqual(4, level.MinMoves, "solver.minMoves is read for the star rule (#44).");
         }
 
         [Test]
@@ -66,12 +67,39 @@ namespace Game.Tests.EditMode
             Assert.IsNull(level.World);
             Assert.IsNull(level.Tutorial);
             Assert.IsNull(level.MoveLimit);
+            Assert.IsNull(level.MinMoves, "No solver block: no known minimum.");
             Assert.AreEqual(0, level.Trays.Count);
             Assert.AreEqual(0, level.Wrapped.Count);
             Assert.IsNull(level.Shelves[0].Id);
             Assert.AreEqual("normal", level.Shelves[0].Kind);
             Assert.AreEqual(0, level.Shelves[0].LockClears);
             Assert.AreEqual(0, level.Shelves[0].Layers.Count);
+        }
+
+        [Test]
+        public void Parse_SolverBlockWithoutMinMoves_HasNoMinimum()
+        {
+            Assert.IsNull(LevelParser.Parse(@"{ ""id"": ""x"", ""solver"": { ""hash"": ""abc"" } }").MinMoves);
+            Assert.IsNull(LevelParser.Parse(@"{ ""id"": ""x"", ""solver"": null }").MinMoves);
+        }
+
+        [Test]
+        public void Parse_WronglyTypedSolverBlock_IsATypeError()
+        {
+            var e = ParseFails(@"{ ""id"": ""x"", ""solver"": { ""minMoves"": ""four"" } }");
+            Assert.AreEqual(LevelErrorCode.WrongType, e.Errors[0].Code);
+            StringAssert.Contains("solver.minMoves", e.Errors[0].Message);
+            ParseFails(@"{ ""id"": ""x"", ""solver"": [1] }");
+        }
+
+        [Test]
+        public void Parse_EveryShippedLevel_HasAMinimum()
+        {
+            foreach (var path in System.IO.Directory.GetFiles("Assets/Levels", "*.json", System.IO.SearchOption.AllDirectories))
+            {
+                var level = LevelParser.Parse(System.IO.File.ReadAllText(path), System.IO.Path.GetFileNameWithoutExtension(path));
+                Assert.That(level.MinMoves, Is.Not.Null.And.GreaterThan(0), path + " needs solver.minMoves for stars.");
+            }
         }
 
         [Test]

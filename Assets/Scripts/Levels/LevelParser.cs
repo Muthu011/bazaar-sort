@@ -28,7 +28,8 @@ namespace Game.Levels
     /// Uses Newtonsoft's LINQ to JSON (<see cref="JToken"/>) rather than reflection-based deserialisation, so nothing
     /// here depends on types surviving IL2CPP managed-code stripping, and every token carries its line and position for
     /// error messages. Strings are never turned into dates, comments are ignored, duplicate keys and trailing content
-    /// are errors, and unknown fields (e.g. <c>solver</c>) are ignored so newer files still load.
+    /// are errors, and unknown fields are ignored so newer files still load. Of the <c>solver</c> block only
+    /// <c>minMoves</c> is read (stars, issue #44); its other fields are ignored.
     /// No file IO: callers pass the text.
     /// </summary>
     public static class LevelParser
@@ -158,6 +159,10 @@ namespace Game.Levels
                 level.Tutorial = ReadString(obj, "tutorial", "field \"tutorial\"");
                 level.MoveLimit = ReadInt(obj, "moveLimit", "field \"moveLimit\"");
                 level.TimeLimitSec = ReadInt(obj, "timeLimitSec", "field \"timeLimitSec\"");
+
+                var solver = Get(obj, "solver");
+                if (solver is JObject solverObj) level.MinMoves = ReadInt(solverObj, "minMoves", "field \"solver.minMoves\"");
+                else if (solver != null) Error(solver, $"field \"solver\" must be an object, found {Describe(solver)}");
 
                 var shelves = ReadArray(obj, "shelves", "field \"shelves\"");
                 if (shelves != null)
