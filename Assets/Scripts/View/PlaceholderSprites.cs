@@ -36,6 +36,7 @@ namespace Game.View
         private static Sprite _star;
         private static Sprite _coin;
         private static Sprite _gear;
+        private static Sprite _play;
 
         /// <summary>
         /// A soft white ellipse, twice as wide as tall, one world unit wide: the pick-up and flight shadow (tint it dark
@@ -54,6 +55,12 @@ namespace Game.View
 
         /// <summary>A white eight-tooth gear with a hole, one world unit across: the settings button icon (issue #40).</summary>
         public static Sprite Gear => _gear != null ? _gear : (_gear = CreateGear());
+
+        /// <summary>
+        /// A white play triangle pointing right, one world unit across: the video mark on the rewarded-ad button
+        /// (issue #41), drawn inside a rounded rect.
+        /// </summary>
+        public static Sprite PlayTriangle => _play != null ? _play : (_play = CreatePlayTriangle());
 
         /// <summary>One world unit across at its natural size; 9-slice borders are the corner radius.</summary>
         public static Sprite RoundedSquare
@@ -223,6 +230,29 @@ namespace Game.View
                 float ring = Mathf.Max(Mathf.Clamp01(body - d + 0.5f), tooth);
                 return Mathf.Min(ring, Mathf.Clamp01(d - hole + 0.5f));
             });
+        }
+
+        private static Sprite CreatePlayTriangle()
+        {
+            const float s = EffectSize;
+            // Triangle with corners (0.2, 0.08), (0.2, 0.92), (0.92, 0.5) of the square; soft one-pixel edge.
+            var a = new Vector2(0.2f * s, 0.08f * s);
+            var b = new Vector2(0.2f * s, 0.92f * s);
+            var c = new Vector2(0.92f * s, 0.5f * s);
+            return Build("PlaceholderPlay", EffectSize, EffectSize, (x, y) =>
+            {
+                var p = new Vector2(x, y);
+                float d = Mathf.Max(EdgeDistance(a, b, p), Mathf.Max(EdgeDistance(b, c, p), EdgeDistance(c, a, p)));
+                return Mathf.Clamp01(0.5f - d);
+            });
+        }
+
+        /// <summary>Signed distance of <paramref name="p"/> from the edge <paramref name="from"/>-<paramref name="to"/> of a clockwise triangle (&gt; 0 outside).</summary>
+        private static float EdgeDistance(Vector2 from, Vector2 to, Vector2 p)
+        {
+            var edge = (to - from).normalized;
+            var outward = new Vector2(-edge.y, edge.x);
+            return Vector2.Dot(p - from, outward);
         }
 
         private static Sprite Build(string name, int width, int height, System.Func<float, float, float> alpha)

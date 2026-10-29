@@ -35,8 +35,18 @@ namespace Game.Core
     /// happen, so no lock can open either: Stuck is final. Won still needs every item cleared, locked ones included.</item>
     /// </list>
     ///
+    /// Fail state (issue #41):
+    /// <list type="bullet">
+    /// <item>Stuck is a fact about the board; Failed is the loss. When a move leaves the board stuck, the board asks its
+    /// <see cref="Rescue"/> (<see cref="IBoosterRescue"/>) whether a booster could still help. If not, Failed is raised
+    /// straight after Stuck and the level is lost.</item>
+    /// <item>Boosters arrive with issue #42. Until then <see cref="Rescue"/> is <see cref="NoBoosterRescue"/>, so every
+    /// Stuck is followed by Failed.</item>
+    /// </list>
+    ///
     /// Event order for one move: Moved, then source shelf settle (LayerRevealed / Cleared ...), then target shelf
-    /// settle (Cleared, LayerRevealed, Cleared ...), then at most one of Won or Stuck. Each Cleared is raised after the
+    /// settle (Cleared, LayerRevealed, Cleared ...), then at most one of Won or Stuck (and Failed right after Stuck when
+    /// no booster can help). Each Cleared is raised after the
     /// lock counts have taken that clear into account, and is followed straight away by ShelfUnlocked for every shelf it
     /// opened, in shelf order.
     /// </summary>
@@ -46,6 +56,8 @@ namespace Game.Core
         private int _itemCount;
         private bool _wonRaised;
         private bool _stuckRaised;
+        private bool _failedRaised;
+        private IBoosterRescue _rescue = NoBoosterRescue.Instance;
 
         // Shelves opened by the latest clear, waiting for their ShelfUnlocked event. A clear can open several shelves.
         private int _pendingUnlocks;
@@ -71,6 +83,22 @@ namespace Game.Core
 
         /// <summary>Raised once, after a move settles into a state with items left but no legal move.</summary>
         public event Action Stuck;
+
+        /// <summary>
+        /// Raised once, straight after <see cref="Stuck"/>, when no booster can help (<see cref="Rescue"/> says no): the
+        /// level is lost. The view shows the fail screen on this, not on Stuck.
+        /// </summary>
+        public event Action Failed;
+
+        /// <summary>
+        /// Asked when a move leaves the board stuck: can a booster still help? Defaults to
+        /// <see cref="NoBoosterRescue"/>; setting null restores that default. Clones start with the default too.
+        /// </summary>
+        public IBoosterRescue Rescue
+        {
+            get => _rescue;
+            set => _rescue = value ?? NoBoosterRescue.Instance;
+        }
 
         /// <summary>
         /// Builds a board from shelves (see <see cref="Shelf(IReadOnlyList{IReadOnlyList{string}}, string)"/> for
@@ -172,6 +200,7 @@ namespace Game.Core
             _itemCount = source._itemCount;
             _wonRaised = false;
             _stuckRaised = false;
+            _failedRaised = false;
             _pendingUnlocks = 0;
         }
 
@@ -191,6 +220,9 @@ namespace Game.Core
 
         /// <summary>True when items remain but no legal move exists.</summary>
         public bool IsStuck => !IsWon && !HasLegalMove();
+
+        /// <summary>True when the board is stuck and no booster can help (<see cref="Rescue"/>): the level is lost.</summary>
+        public bool IsFailed => IsStuck && !_rescue.CanRescue(this);
 
         /// <summary>
         /// True when at least one open (not locked) shelf has a front item and some other open shelf has a free front
@@ -302,6 +334,11 @@ namespace Game.Core
                 {
                     _stuckRaised = true;
                     Stuck?.Invoke();
+                }
+                if (!_failedRaised && !_rescue.CanRescue(this))
+                {
+                    _failedRaised = true;
+                    Failed?.Invoke();
                 }
             }
 

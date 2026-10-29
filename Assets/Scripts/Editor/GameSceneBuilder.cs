@@ -133,7 +133,7 @@ namespace Game.EditorTools
         }
 
         /// <summary>
-        /// Win panel at 1080x1920 and 1080x2400 and Stuck panel at 1080x1920, over the board in that state, into
+        /// Win panel at 1080x1920 and 1080x2400 and Fail panel at 1080x1920, over the board in that state, into
         /// <paramref name="outputDir"/>. The 2400 shot uses a safe area with a 110 px top cutout and 60 px gesture bar.
         /// </summary>
         public static List<string> CaptureResultPanelScreenshots(string outputDir)
@@ -154,11 +154,40 @@ namespace Game.EditorTools
                 written.Add(Capture(won, size.x, size.y, path, view => view.CompleteAnimations(), ResultPanel.Win, safe));
             }
 
-            var stuck = StuckBoard();
-            stuck.TryMove(1, 0, 0);
-            var stuckSize = ScreenshotSizes[0];
-            written.Add(Capture(stuck, stuckSize.x, stuckSize.y, Path.Combine(outputDir, $"stuck_panel_{stuckSize.x}x{stuckSize.y}.png"),
-                view => view.CompleteAnimations(), ResultPanel.Stuck, SafeAreaFor(stuckSize)));
+            written.AddRange(CaptureFailPanelScreenshots(outputDir));
+            return written;
+        }
+
+        /// <summary>
+        /// The Fail panel ("Out of space!", issue #41) over <see cref="StuckBoard"/> after its losing move, at 1080x1920
+        /// and 1080x2400 (safe area as in <see cref="CaptureResultPanelScreenshots"/>), plus a 1080x1920 variant with the
+        /// hidden rewarded Continue forced on, into <paramref name="outputDir"/>.
+        /// </summary>
+        public static List<string> CaptureFailPanelScreenshots(string outputDir)
+        {
+            var written = new List<string>();
+            Directory.CreateDirectory(outputDir);
+            foreach (var size in ScreenshotSizes)
+            {
+                var failed = StuckBoard();
+                failed.TryMove(1, 0, 0);
+                if (!failed.IsFailed)
+                {
+                    Debug.LogError("CaptureFailPanelScreenshots: the losing move did not fail the board.");
+                    return written;
+                }
+                string path = Path.Combine(outputDir, $"fail_panel_{size.x}x{size.y}.png");
+                written.Add(Capture(failed, size.x, size.y, path, view => view.CompleteAnimations(), ResultPanel.Fail, SafeAreaFor(size)));
+            }
+
+            // QA only: the rewarded Continue ("Free Extra Slot") is hidden in the game until Slice 6; show it here so
+            // the layout can be reviewed.
+            var preview = StuckBoard();
+            preview.TryMove(1, 0, 0);
+            var previewSize = ScreenshotSizes[0];
+            string previewPath = Path.Combine(outputDir, $"fail_panel_with_continue_{previewSize.x}x{previewSize.y}.png");
+            written.Add(Capture(preview, previewSize.x, previewSize.y, previewPath, view => view.CompleteAnimations(),
+                ResultPanel.Fail, SafeAreaFor(previewSize), panels => panels.ShowContinueForPreview(true)));
             return written;
         }
 
@@ -436,7 +465,7 @@ namespace Game.EditorTools
 
         /// <summary>Renders <paramref name="board"/> at <paramref name="width"/>x<paramref name="height"/> into a PNG at <paramref name="path"/>.</summary>
         public static string Capture(Board board, int width, int height, string path, System.Action<BoardView> beforeRender = null,
-            ResultPanel panel = ResultPanel.None, Rect? safeArea = null)
+            ResultPanel panel = ResultPanel.None, Rect? safeArea = null, System.Action<ResultPanels> panelSetup = null)
         {
             var safe = safeArea ?? new Rect(0, 0, width, height);
             var target = new RenderTexture(width, height, 24, RenderTextureFormat.ARGB32);
@@ -456,6 +485,7 @@ namespace Game.EditorTools
                     panels.Build(camera, false);
                     panels.Layout(safe, ScreenshotDensity);
                     panels.Show(panel);
+                    panelSetup?.Invoke(panels);
                     Canvas.ForceUpdateCanvases();
                 }
                 camera.Render();

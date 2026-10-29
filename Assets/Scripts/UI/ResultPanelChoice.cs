@@ -10,8 +10,8 @@ namespace Game.UI
         /// <summary>Won a level that has a next one: Next and Retry.</summary>
         Win,
 
-        /// <summary>No legal move left: Retry.</summary>
-        Stuck,
+        /// <summary>Lost, out of space (issue #41): Retry, and later a rewarded-ad Continue (hidden until Slice 6).</summary>
+        Fail,
 
         /// <summary>Won the last available level: "More levels coming soon" with Replay (goes to level 1).</summary>
         MoreLevelsSoon,
@@ -28,7 +28,7 @@ namespace Game.UI
             switch (outcome)
             {
                 case BoardOutcome.Won: return hasNextLevel ? ResultPanel.Win : ResultPanel.MoreLevelsSoon;
-                case BoardOutcome.Stuck: return ResultPanel.Stuck;
+                case BoardOutcome.Failed: return ResultPanel.Fail;
                 default: return ResultPanel.None;
             }
         }

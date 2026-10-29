@@ -13,7 +13,7 @@ using UnityEngine.UI;
 namespace Game.Tests.PlayMode
 {
     /// <summary>
-    /// Win and Stuck panels end to end: real pointer input through <see cref="BoardInput"/> wins or sticks the board,
+    /// Win and Fail panels end to end: real pointer input through <see cref="BoardInput"/> wins or fails the board,
     /// the panel shows once the animations end, and its buttons (clicked through the EventSystem with the Input System
     /// UI module) Retry or load the Next level through <see cref="LevelBootstrap"/>. Winning the last level shows
     /// "More levels coming soon" whose Replay loads w1_l001; Next never loops.
@@ -203,7 +203,7 @@ namespace Game.Tests.PlayMode
             yield return null;
             Assert.AreEqual(BoardOutcome.Won, _view.Outcome);
             Assert.IsTrue(_panels.IsWinVisible, "Win panel shows after the last clear.");
-            Assert.IsFalse(_panels.IsStuckVisible);
+            Assert.IsFalse(_panels.IsFailVisible);
 
             yield return ClickButton(_panels.WinNextButton);
             Assert.AreEqual(1, _bootstrap.CurrentIndex, "Next loads the next level.");
@@ -253,7 +253,7 @@ namespace Game.Tests.PlayMode
             Assert.AreEqual(BoardOutcome.Won, _view.Outcome);
             Assert.IsTrue(_panels.IsMoreLevelsVisible, "More levels coming soon shows after the last level.");
             Assert.IsFalse(_panels.IsWinVisible, "The Win panel (with Next) is not shown on the last level.");
-            Assert.IsFalse(_panels.IsStuckVisible);
+            Assert.IsFalse(_panels.IsFailVisible);
             Assert.AreEqual("More levels coming soon", _panels.MoreLevelsTitleLabel.text.Replace('\n', ' '));
 
             // One button, Replay, and no Next anywhere on screen.
@@ -296,7 +296,7 @@ namespace Game.Tests.PlayMode
         // ---- Stuck ----
 
         [UnityTest]
-        public IEnumerator StuckByInput_ShowsStuckPanel_ThenRetryRestoresStart()
+        public IEnumerator StuckByInput_ShowsFailPanel_ThenRetryRestoresStart()
         {
             var level = new TextAsset(StuckLevelJson) { name = "test_stuck" };
             Wire(new[] { level });
@@ -308,16 +308,16 @@ namespace Game.Tests.PlayMode
             Assert.IsTrue(_view.Board.IsStuck, "Precondition: the move leaves no legal move.");
             yield return WaitForOutcome();
             yield return null;
-            Assert.AreEqual(BoardOutcome.Stuck, _view.Outcome);
-            Assert.IsTrue(_panels.IsStuckVisible, "Stuck panel shows.");
+            Assert.AreEqual(BoardOutcome.Failed, _view.Outcome);
+            Assert.IsTrue(_panels.IsFailVisible, "Fail panel shows.");
             Assert.IsFalse(_panels.IsWinVisible);
 
             // Board input is locked under the panel: a tap on a tile does not select it.
             yield return Click(Tile(0, 0));
             Assert.AreEqual(-1, _view.SelectedShelf, "No selection through the panel.");
 
-            yield return ClickButton(_panels.StuckRetryButton);
-            Assert.IsFalse(_panels.IsStuckVisible, "Panel hides on Retry.");
+            yield return ClickButton(_panels.FailRetryButton);
+            Assert.IsFalse(_panels.IsFailVisible, "Panel hides on Retry.");
             var expected = LevelLoader.Load(StuckLevelJson, "test_stuck").Board;
             AssertSameStart(expected, _view.Board);
             Assert.IsFalse(_view.Board.IsStuck);
@@ -345,17 +345,17 @@ namespace Game.Tests.PlayMode
             _panels.Layout(safe, density);
             yield return null;
 
-            foreach (var panel in new[] { ResultPanel.Win, ResultPanel.Stuck, ResultPanel.MoreLevelsSoon })
+            foreach (var panel in new[] { ResultPanel.Win, ResultPanel.Fail, ResultPanel.MoreLevelsSoon })
             {
                 _panels.Show(panel);
                 Canvas.ForceUpdateCanvases();
                 var card = panel == ResultPanel.Win ? _panels.WinCard
-                    : panel == ResultPanel.Stuck ? _panels.StuckCard
+                    : panel == ResultPanel.Fail ? _panels.FailCard
                     : _panels.MoreLevelsCard;
                 AssertInside(safe, card, $"{panel} card at {width}x{height}");
 
                 var buttons = panel == ResultPanel.Win ? new[] { _panels.WinNextButton, _panels.WinRetryButton }
-                    : panel == ResultPanel.Stuck ? new[] { _panels.StuckRetryButton }
+                    : panel == ResultPanel.Fail ? new[] { _panels.FailRetryButton }
                     : new[] { _panels.MoreLevelsReplayButton };
                 foreach (var button in buttons)
                 {

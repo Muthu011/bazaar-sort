@@ -48,6 +48,15 @@ Level files may only use these ids (snake_case, case-sensitive). The code copy i
 - Tapping a locked item, or dropping onto a locked shelf, gives the normal invalid-move shake.
 - Placeholder look: dark scrim over the shelf and a brass padlock on its top-right corner showing the clears left. The number bumps on each clear; the padlock grows and fades out when the shelf opens.
 
+### Fail (issue #41)
+- A level is lost when a move leaves items on the board, no legal move, and no booster that could help. Core raises `Stuck` (the fact) and then `Failed` (the loss); the fail screen shows on `Failed`.
+- "No booster can help" is asked through `IBoosterRescue` on the board. Until boosters ship (#42) nothing can help, so every Stuck is a fail. With a booster that could help, the board is stuck but not failed, and the fail screen waits.
+- Fail screen: "Out of space!" with Retry. Retry restarts the same level from its start state.
+- A rewarded-ad Continue button sits on the fail screen from Slice 6. Until then it exists but is hidden and does nothing.
+- The Continue button is the main button: above Retry, larger, labelled "Free Extra Slot" with a small video icon, because what the player gets is an extra slot. When it shows, Retry becomes the smaller secondary button. While it is hidden, Retry alone is the main button (Muthu, PR #51).
+- The final wording of the Continue button is checked in Slice 6, when the rewarded ad is wired.
+- No interstitial and no penalty after a fail: no ad, no lost coins, stars or unlocks, nothing saved. The player just tries again.
+
 ### Board size and touch areas (decided by Muthu, Oct 2026)
 - The 4–12 shelf layout is fixed. Don't shrink or move shelves or items to make tap targets bigger.
 - Each item's touch area is bigger than its picture: it extends into the gaps between items and halfway into the gaps between shelves, to reach 48 dp wherever there's room.

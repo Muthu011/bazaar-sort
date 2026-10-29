@@ -25,8 +25,9 @@ namespace Game.View
     /// array per shelf made in <see cref="Bind"/>, steps are structs holding string references from the board, so
     /// playing them allocates nothing. Animations are visual only: input stays live, and anything that touches an
     /// animating shelf (a move from or to it, a selection, a drag, a shake) first snaps that shelf to its final state.
-    /// Won and Stuck are shown (<see cref="OutcomeReady"/>) once every animation has finished; from the Won or Stuck
-    /// event on, <see cref="InputLocked"/> is true.
+    /// Won and Failed are shown (<see cref="OutcomeReady"/>) once every animation has finished; from the Won or Failed
+    /// event on, <see cref="InputLocked"/> is true. Failed (issue #41), not Stuck, ends the level: a stuck board that a
+    /// booster can still rescue stays in play.
     ///
     /// Locked shelves (issue #19): a dim scrim over the shelf and a placeholder padlock on its top-right corner showing
     /// the clears left (<see cref="Shelf.LockClearsLeft"/>). The number is re-read from the board on every Cleared and
@@ -66,7 +67,7 @@ namespace Game.View
         private const float LabelHeightInTile = 0.6f;
 
         internal const string WonText = "Cleared!";
-        internal const string StuckText = "No moves left";
+        internal const string FailedText = "Out of space!";
 
         private static readonly Color32 BackgroundColor = new Color32(0x3E, 0x27, 0x23, 0xFF);
         private static readonly Color32 ShelfColor = new Color32(0xA1, 0x88, 0x7F, 0xFF);
@@ -149,8 +150,8 @@ namespace Game.View
         private bool _inputHeld;
 
         /// <summary>
-        /// Raised once per board, after Won or Stuck, when every clear and reveal animation has finished: the moment to
-        /// show the Win or Stuck panel.
+        /// Raised once per board, after Won or Failed, when every clear and reveal animation has finished: the moment to
+        /// show the Win or Fail panel.
         /// </summary>
         public event Action<BoardOutcome> OutcomeReady;
 
@@ -179,7 +180,7 @@ namespace Game.View
         /// <summary>The outcome shown through <see cref="OutcomeReady"/>, or None.</summary>
         public BoardOutcome Outcome => _outcome;
 
-        /// <summary>True once the board is won or stuck: board input stops (the result panel takes over).</summary>
+        /// <summary>True once the board is won or failed: board input stops (the result panel takes over).</summary>
         public bool InputLocked => _inputHeld || InputBlocked || _pendingOutcome != BoardOutcome.None || _outcome != BoardOutcome.None;
 
         /// <summary>
@@ -227,7 +228,7 @@ namespace Game.View
             _board.LayerRevealed += OnLayerRevealed;
             _board.ShelfUnlocked += OnShelfUnlocked;
             _board.Won += OnWon;
-            _board.Stuck += OnStuck;
+            _board.Failed += OnFailed;
 
             Relayout(safeArea);
             for (int i = 0; i < _shelves.Length; i++)
@@ -247,7 +248,7 @@ namespace Game.View
                 _board.LayerRevealed -= OnLayerRevealed;
                 _board.ShelfUnlocked -= OnShelfUnlocked;
                 _board.Won -= OnWon;
-                _board.Stuck -= OnStuck;
+                _board.Failed -= OnFailed;
                 _board = null;
             }
 
@@ -586,17 +587,17 @@ namespace Game.View
             _pendingOutcome = BoardOutcome.Won;
         }
 
-        private void OnStuck()
+        private void OnFailed()
         {
-            _status.text = StuckText;
-            _pendingOutcome = BoardOutcome.Stuck;
+            _status.text = FailedText;
+            _pendingOutcome = BoardOutcome.Failed;
         }
 
         // ---- Clear / reveal animations ----
 
         /// <summary>
         /// Plays queued clears and reveals forward by <paramref name="seconds"/>, then raises <see cref="OutcomeReady"/>
-        /// if the board is won or stuck and nothing is animating any more. <see cref="Update"/> calls it with
+        /// if the board is won or failed and nothing is animating any more. <see cref="Update"/> calls it with
         /// <see cref="Time.deltaTime"/>; tests and the screenshot tool call it directly. Allocates nothing.
         /// </summary>
         public void AdvanceAnimations(float seconds)
