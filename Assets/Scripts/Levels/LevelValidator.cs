@@ -10,7 +10,8 @@ namespace Game.Levels
     ///
     /// Rules checked:
     /// <list type="bullet">
-    /// <item><c>schema</c> is 1, <c>id</c> is set, and <c>shelves</c> is present and not empty.</item>
+    /// <item><c>schema</c> is 1, <c>id</c> is set, and <c>shelves</c> is present, not empty and at most
+    /// <see cref="MaxShelves"/> long.</item>
     /// <item>Every shelf is <c>normal</c> or <c>locked</c> (conveyor shelves are rejected as not supported yet) and
     /// has at least a front row, and every layer has exactly <see cref="Shelf.SlotCount"/> slots.</item>
     /// <item>A locked shelf has <c>lockClears</c> of at least 1; any other shelf has it absent or 0.</item>
@@ -32,6 +33,12 @@ namespace Game.Levels
     /// </summary>
     public static class LevelValidator
     {
+        /// <summary>
+        /// Most shelves a level may have: the cap for the whole game, no per-phone special cases (Muthu, 2026-10-29,
+        /// issue #40). The portrait layout keeps item touch areas at 44 dp or more on every supported phone up to here.
+        /// </summary>
+        public const int MaxShelves = 12;
+
         /// <summary>
         /// Returns every problem with <paramref name="level"/>; an empty list means the board can be built from it.
         /// <paramref name="sourceName"/> names the level in errors when it has no <c>id</c>.
@@ -67,6 +74,12 @@ namespace Game.Levels
                 errors.Add(new LevelError(LevelErrorCode.MissingShelves, levelId,
                     $"field \"shelves\" is {what}; a level needs at least one shelf"));
                 return errors;
+            }
+
+            if (level.Shelves.Count > MaxShelves)
+            {
+                errors.Add(new LevelError(LevelErrorCode.TooManyShelves, levelId,
+                    $"{level.Shelves.Count} shelves; a level may have at most {MaxShelves}"));
             }
 
             // Object counts in order of first appearance, so error order follows the file.

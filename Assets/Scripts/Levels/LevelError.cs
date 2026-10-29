@@ -40,6 +40,11 @@ namespace Game.Levels
         /// can't be won.
         /// </summary>
         LockNeverOpens,
+        /// <summary>
+        /// More than <see cref="LevelValidator.MaxShelves"/> shelves: 12 is the cap for the whole game (Muthu, 2026-10-29),
+        /// so every board keeps its touch areas on every phone.
+        /// </summary>
+        TooManyShelves,
     }
 
     /// <summary>

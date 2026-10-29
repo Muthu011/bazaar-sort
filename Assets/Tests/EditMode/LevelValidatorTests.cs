@@ -75,6 +75,43 @@ namespace Game.Tests.EditMode
 
         // ---------- Schema, id, shelves ----------
 
+        /// <summary>
+        /// <paramref name="count"/> shelves: shelf 1 holds two tumblers and a free slot, shelf 2 one tumbler, the rest
+        /// are empty. Valid apart from the shelf count.
+        /// </summary>
+        private static string ManyShelves(int count)
+        {
+            var shelves = new List<string> { Shelf("s1", "[\"tumbler\", \"tumbler\", null]"), Shelf("s2", "[\"tumbler\", null, null]") };
+            for (int i = 3; i <= count; i++) shelves.Add(Shelf("s" + i, "[null, null, null]"));
+            return string.Join(", ", shelves);
+        }
+
+        [Test]
+        public void Validate_TwelveShelves_IsAllowed()
+        {
+            Assert.AreEqual(12, LevelValidator.MaxShelves, "12 is the cap for the whole game (Muthu, 2026-10-29).");
+            CollectionAssert.IsEmpty(ValidateShelves(ManyShelves(12)));
+        }
+
+        [Test]
+        public void Validate_ThirteenShelves_IsRejectedWithAClearError()
+        {
+            var errors = ValidateShelves(ManyShelves(13));
+            CollectionAssert.AreEqual(new[] { LevelErrorCode.TooManyShelves }, Codes(errors));
+            StringAssert.Contains("13 shelves", errors[0].Message);
+            StringAssert.Contains("at most 12", errors[0].Message);
+        }
+
+        [Test]
+        public void Load_ThirteenShelves_FailsInTheLoader()
+        {
+            string json = $"{{ \"schema\": 1, \"id\": \"{Id}\", \"shelves\": [ {ManyShelves(13)} ] }}";
+            var result = LevelLoader.Load(json, Id);
+            Assert.IsFalse(result.Success, "The loader refuses a 13-shelf level.");
+            Assert.IsNull(result.Board);
+            CollectionAssert.Contains(result.Errors.Select(e => e.Code).ToArray(), LevelErrorCode.TooManyShelves);
+        }
+
         [Test]
         public void Validate_SchemaNotOne_IsError()
         {
