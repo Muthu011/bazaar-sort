@@ -58,22 +58,28 @@ Level files may only use these ids (snake_case, case-sensitive). The code copy i
 - No interstitial and no penalty after a fail: no ad, no lost coins, stars or unlocks, nothing saved. The player just tries again.
 
 ### Stars and coins (issue #44)
-Code: `Game.Core.WinRewards` (rules), the wallet in the progress save (`Game.Services.ProgressService`).
+Code: `Game.Core.WinRewards` (rules), `Game.Core.RewardConfig` (amounts), `Game.Core.MoveCounter` (moves), the wallet in the progress save (`Game.Services.ProgressService`). Rulings by Muthu on PR #63.
 - Moves: every successful move since the level was loaded. A drop back on the same shelf is a cancel and doesn't count. Retry starts again at 0.
+- Undone moves still count. Undo (#53) takes a move back on the board but never takes it off the move count: the count only goes up until the next level load. `MoveCounter` has no way to lower it, and `MoveCounterTests` fails if one is added.
 - Stars, against the solver's shortest win (`solver.minMoves` in the level file):
   - 3 stars: moves at or under minMoves x 1.5.
   - 2 stars: moves at or under minMoves x 2.5.
   - 1 star: anything more. Every win earns at least 1 star.
 - Thresholds that aren't whole numbers are not rounded. With minMoves 5, 7 moves is 3 stars (7 ≤ 7.5) and 8 moves is 2 stars. The code compares 2 x moves with 3 x minMoves and 5 x minMoves, so the check is exact.
 - A level with no minMoves (missing, 0 or negative, for example a test board the solver hasn't stamped) gives 3 stars. Every shipped level must have one (`LevelParserTests`).
-- Coins per win: 10, plus 5 for each star above 1. So 1 star = 10, 2 stars = 15, 3 stars = 20.
-- Every win adds its coins, replays of a level already won included. The save keeps the best stars per level, and stars never go down.
+- First win of a level: 10 coins, plus 5 for each star above 1. So 1 star = 10, 2 stars = 15, 3 stars = 20.
+- Replay (the level was won before): 5 coins for each star above the previous best stars, otherwise 0. Same stars or fewer earn nothing. A 1-star first win (10) then a 3-star replay (+10) totals 20, the same as a 3-star first win; going 1, 2, 3 stars pays 10 + 5 + 5. A level never pays more than 20 in total.
+- The amounts (10 and 5) are config values, `RewardConfig.Default` (`FirstWinCoins`, `CoinsPerExtraStar`), not literals in the rules. There is no remote config in the project yet; when Firebase Remote Config is wired, a service builds a `RewardConfig` from it and sets `LevelBootstrap.Rewards`.
+- The save keeps the best stars per level, and stars never go down.
 - The win, its best stars, its coins and the unlock are saved in one write, the moment the board is won.
 - Wallet: saved with progress (`coins` in `progress.json`) and never negative. A spend can't take more coins than the wallet holds; with too few coins nothing changes and nothing is saved. Boosters spend from the wallet (prices: #56).
 - A save written before coins existed loads as 0 coins and keeps its stars and unlocks.
 - A fail costs nothing (see Fail).
-- HUD: the coin pill shows the wallet balance (up to 9999, then "9999+") and updates on every win and spend. The coin that flies to the pill on each clear is feel only: clears earn no coins.
-- Win card: three star slots. The earned stars are lit in marigold and the rest show as dim empty stars.
+- Clears earn no coins and fly no coin (the per-clear coin flight was removed).
+- HUD: the coin pill shows the wallet balance and updates on every spend at once. The number is always drawn at full size (20 dp) and never shrinks; the pill widens leftwards to fit it, from 84 dp (up to 3 digits) to 103.5 dp (5 digits). Above 99,999 it shows "99K+" ("more than 99 thousand"): "99999+" would not fit beside the three 48 dp booster slots on a 360 dp phone. The booster slots are sized for the widest pill, so they never move.
+- Win card: three star slots. The earned stars are lit in marigold and the rest show as dim empty stars. The dim colour #D7CCC8 is a placeholder until the Slice 4 art pass.
+- Win card coins: under the stars, a "+N" line with a coin shows the coins this win earned (string key `win.coins_earned`, English "+{0}"; no localisation system yet, so the English template sits in code next to the key, like the other Win card text). A replay that earns 0 has no line at all (hidden, not "+0"), and the card is as tall as before.
+- The coins are saved the moment the board is won, but the pill keeps the old balance until they arrive: once the stars have landed, coins fly from the "+N" line into the pill (one coin per 5 earned, up to 6), the pill rises above the card's dim backdrop, and its number counts up as each coin lands, ending on the wallet. Leaving the card (Next, Retry) or any other panel shows the whole balance at once; nothing is ever lost.
 
 ### Board size and touch areas (decided by Muthu, Oct 2026)
 - The 4–12 shelf layout is fixed. Don't shrink or move shelves or items to make tap targets bigger.
