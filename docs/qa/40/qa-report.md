@@ -88,3 +88,60 @@ Not measured by me: I did not enter Play Mode (the editor was in use by tests, a
 RESULT: FAIL
 
 Top issues for the author: (1) the 16:9 + cutout 13 to 14 shelf touch area of 42.9 dp (decide and document or test it); (2) get Muthu's decision on the 2x2 tile shrink for 4 to 7 shelf boards before merge; (3) record a frame-time measurement for L15.
+
+---
+
+# Round 2 (final), tip 67d32ff
+
+New since round 1: 12-shelf cap (docs, loader `TooManyShelves`, tests), `MinColumns` removed and the column count is the biggest-tile one of 1, 2, 3, style guide and art-director.md updated (256 px import), DevOverlay PlayMode tests pinned to a fixed 1080x2400 texture, screenshots regenerated.
+
+## a. Tests
+| Suite | Result | Time |
+| --- | --- | --- |
+| EditMode `!Performance` (MCP) | 641 / 641 passed (was 609) | 70.2 s |
+| PlayMode full (MCP) | 68 / 68 passed | 28.2 s |
+| Performance batch (`run-performance-tests.sh`) | 1 / 1 passed, `Analyse_FourteenShelfLevelWithLocks_UnderTenSeconds` 2.03 s | about 36 s |
+| Console | 0 errors, 0 warnings (one "Curl error 16 ... unitytls" network line seen earlier, editor noise) | |
+
+DevOverlay independence from Game view size: by reading, the tests now render the camera to a 1080x2400 RenderTexture and call `Bind` and `Layout` with a fixed `PhoneSafeArea` and density 3, so they no longer follow `Screen`. The PlayMode run passed with the Game view at preset index 15 (whatever it was; I did not change it). I did not run it under a second Game view size.
+
+## b. Tests and code diff
+- `git diff origin/main -- Assets/Tests/EditMode/BoardLayoutTests.cs` is empty: byte-identical to origin/main (the round-1 edits are reverted).
+- `BoardLayout.cs` vs origin/main: only a doc comment change on `Compute` (the biggest-items column rule). `MinColumns` and the Compute loop change are gone; logic identical to main.
+- PortraitLayoutTests, removed: `Shelves_TwoOrThreePerRow_AndFillTheWidth` (asserted Columns in 2..3, and for <= 8 shelves that the width is filled), `MinColumns_BelowOne_CountsAsOne_...` (tested the removed setting). Added: `ColumnCount_GivesTheBiggestItems_AmongOneTwoAndThree` (independently recomputes the tile for 1, 2, 3 columns; asserts Columns equals the best, TileSize equals the best, and is not smaller than any of the three), `Shelves_GrowUntilTheyFillTheBandWidthOrHeight` (the old fills-width-or-height check, using the true row width), two new Phones (16:9 with 24 dp cutout, and with cutout plus gesture bar). Range 4..12 via `LevelValidator.MaxShelves`. Judgment: not weakened against the new rule. The "always fills width for <= 8 shelves" check is invalid under one-column boards, and the new column test is stricter on tile size. The thresholds are unchanged: 48 dp up to 8 shelves, `FloorTouchDp` (44 dp) above, now up to 12; the `PlayerSettings_ArePortraitOnly` test is kept.
+
+## c. Layout table (BoardLayout.Compute, called in the editor), tile dp / smallest touch dp
+| Setup | 4 | 5 | 6 | 7 | 8 | 9 to 10 | 11 to 12 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1080x2400 full | 1c 86.4 / 96.7 | 1c 68.4 / 76.7 | 1c 56.7 / 63.5 | 1c 48.4 / 54.2 | 2c 45.9 / 51.4 | same | same |
+| 1080x2400 110 top, 63 bottom px | 1c 80.1 / 89.8 | 1c 63.5 / 71.1 | 1c 52.6 / 58.9 | 2c 45.9 / 51.4 | same | same | same |
+| 1080x1920 full | 1c 69.1 / 77.4 | 1c 54.8 / 61.3 | 2c 45.9 / 51.4 | same | same | same | 2c 45.3 / 50.8 |
+| 1080x1920 24 dp top | 1c 66.5 / 74.5 | 1c 52.7 / 59.0 | 2c 45.9 / 51.4 | same | same | same | 2c 43.6 / 48.9 |
+| 1080x1920 24 dp top + gesture | 1c 64.2 / 71.9 | 1c 50.9 / 57.0 | 2c 45.9 / 51.4 | same | same | same | 2c 42.2 / 48.0 |
+| 720x1600 full | 1c 86.4 / 96.7 | 68.4 / 76.7 | 56.7 / 63.5 | 1c 48.4 / 54.2 | 2c 45.9 / 51.4 | same | same |
+| 720x1600 74 top, 42 bottom px | 1c 80.1 / 89.7 | 63.5 / 71.1 | 52.6 / 58.9 | 2c 45.9 / 51.4 | same | same | same |
+
+Confirmed: 4-shelf board is one column again (86.4 dp at 1080x2400); the 16:9 + 24 dp cutout at 12 shelves is 48.9 dp touch (48.0 with the gesture bar), so at least 44 dp everywhere; no setup is below 48.0 dp at any shelf count 4 to 12. This table equals origin/main for 4 to 8 shelves (the round-1 "main" numbers). The style guide table (4 to 12) matches these numbers (spot-checked 8 cells).
+
+## d. Cap
+- `LevelValidator.MaxShelves = 12`; 13 shelves gives `TooManyShelves` with message "13 shelves; a level may have at most 12". Tests: `Validate_TwelveShelves_IsAllowed`, `Validate_ThirteenShelves_IsRejectedWithAClearError`, `Load_ThirteenShelves_FailsInTheLoader`, and `LevelPackTests.Level_HasAtMostTwelveShelves` (15 cases). All pass.
+- Shipped levels w1_l001 to l015 have 4,4,4,5,6,6,7,7,8,8,6,6,7,7,8 shelves: all at most 8.
+- The synthetic 14-shelf solver performance test is untouched (it builds boards directly, bypassing the validator) and passes.
+
+## e. Docs
+- `docs/game-design.md` says 4-12 shelves, 12 cap, column rule; `docs/level-schema.md` and `.claude/agents/level-designer.md` state the cap; `.claude/agents/art-director.md` and `docs/style-guide.md` say 256 px max import with 512 px masters kept in the art source folder, consistent with decision 3.
+- grep of docs, .claude, CLAUDE.md, Assets/Scripts for "4-14", "13-14", "up to 14", "2 or 3 per row", "3.7x": no leftovers (the only "per row" hits are the new column rule and DevLevelSelectLayout's own button grid). The style guide discloses the 1% case (a 4-shelf tile of 259 px vs a 256 px import).
+- Muthu's earlier 2026-10-29 decisions (48 / 44 dp rules, levels 1 to 20 at most 8 shelves, win-rate targets) are not undone. Minor wording nit: game-design.md still says "The 4-12 shelf layout is fixed. Don't shrink or move shelves..." next to the column rule; consistent with the decisions as given.
+
+## f. Frame time (own reading)
+The editor was in Edit Mode (checked with `EditorApplication.isPlaying` = false; scene Game.unity). I entered Play Mode, loaded L15 with `LevelBootstrap.LoadLevel(14)` (8 shelves, 2 columns, one lock), read `get_frame_timing` twice, and stopped Play Mode. The Game view was not changed. Readings (editor, unfocused, so heavily throttled: wall frame time 100 to 200 ms, which is the throttle, not the game): main thread 2.28 ms and 1.41 ms, render thread 1.43 ms and 1.93 ms, GPU 0.69 ms and 0.70 ms. This agrees with the author (main 2.2 to 2.4, render 1.7 to 1.9, GPU 1.1; direct timing 0.133 ms). The per-frame CPU and GPU work is about 2 ms, well under 16.6 ms; this is editor, not device, and not a sustained multi-second capture, so a low-end Android device check remains for later. Judgment: evidence is enough for the in-editor criterion.
+
+## g. Screenshots (regenerated, 10 files; I viewed L1 1080x2400, L1 720x1600, L15 1080x1920 and L15 in round 1 form; layouts follow the column table)
+- L1 (4 shelves): one column, large tiles, at 1080x2400 and 720x1600; bars inside cutout and gesture bar; level label, Levels button, fps lines, boosters, coins and gear do not overlap; settings panel unchanged (readable).
+- L15 (8 shelves): two columns, lock badge visible, bars clear.
+- Observations (minor): in the L1 one-column shots the bottom shelf ends about 12 dp above the booster slots and the top shelf about 12 dp under the Levels button, so the board nearly touches the bars. By my estimate the lowest shelf's touch area (half the row gap, about 45 px) reaches into the top of the booster slots by roughly 10 px; boosters are empty placeholders now, so no effect yet, but check once boosters are tappable. 1080x1920 shots are full screen. Fps lines read "0 fps" (captured before sampling).
+
+## Findings
+No blocking findings. Round-1 findings 1 and 2 are resolved by Muthu's decisions (12-shelf cap with 44 dp or more met; biggest-items column rule). Open, minor: (1) the one-column bottom shelf's touch area vs the booster slots once boosters are live; (2) frame time is not measured on a device; (3) add3f44 alone still does not compile (history only).
+
+RESULT: PASS
