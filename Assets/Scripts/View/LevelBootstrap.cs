@@ -20,11 +20,13 @@ namespace Game.View
     /// "More levels coming soon" with Replay. Level ids are the level file names (w1_l001...). Without progress (tests
     /// that wire levels from code), it starts at the configured index and saves nothing.
     ///
-    /// Stars and coins (issue #44): the bootstrap counts the moves of the level being played (every
-    /// <see cref="Board.Moved"/>; a drop back on the same shelf is a cancel and never raises it) from each load, so a
-    /// Retry starts again at 0. On Won the stars come from <see cref="WinRewards.StarsFor"/> against the level's
-    /// <c>solver.minMoves</c> and are kept in <see cref="LastWinStars"/> for the Win card, with or without progress;
-    /// with progress the win, its best stars and its coins are saved in one write.
+    /// Stars and coins (issue #44): the bootstrap counts the moves of the level being played in a <see cref="MoveCounter"/>
+    /// (every <see cref="Board.Moved"/>; a drop back on the same shelf is a cancel and never raises it) from each load, so
+    /// a Retry starts again at 0. The count only goes up: undone moves still count (#53 must keep it so). On Won the stars
+    /// come from <see cref="WinRewards.StarsFor"/> against the level's <c>solver.minMoves</c> and are kept in
+    /// <see cref="LastWinStars"/> for the Win card, with or without progress. With progress the coins come from
+    /// <see cref="ProgressRules.CoinsForWin"/> with <see cref="Rewards"/> (full on a first win, only new stars on a
+    /// replay), <see cref="WinRewarded"/> is raised, then the win, its best stars and its coins are saved in one write.
     /// </summary>
     public sealed class LevelBootstrap : MonoBehaviour
     {
@@ -40,7 +42,8 @@ namespace Game.View
         private Board _board;
         private LevelData _level;
         private int _current = -1;
-        private int _moves;
+        private readonly MoveCounter _moves = new MoveCounter();
+        private RewardConfig _rewards;
         private int _lastWinStars;
         private int _lastWinCoins;
         private bool _awaitingReplay;
@@ -57,6 +60,19 @@ namespace Game.View
         /// </summary>
         public event Action AllLevelsCleared;
 
+        /// <summary>
+        /// Raised on a win with progress, with its stars and the coins it earns, just <b>before</b> they are saved (same
+        /// call, same frame): the Win card holds those coins back from the HUD pill until they fly into it.
+        /// </summary>
+        public event Action<int, int> WinRewarded;
+
+        /// <summary>Coin amounts for a win; <see cref="RewardConfig.Default"/> unless set (remote config later, tests).</summary>
+        public RewardConfig Rewards
+        {
+            get => _rewards ?? RewardConfig.Default;
+            set => _rewards = value;
+        }
+
         /// <summary>The view the levels are drawn in.</summary>
         public BoardView View => _view;
 
@@ -71,13 +87,16 @@ namespace Game.View
         /// <summary>Parsed data of the level being played (tutorial key, limits, ...), or null before the first load.</summary>
         public LevelData CurrentLevel => _level;
 
-        /// <summary>Moves made since the current level was loaded.</summary>
-        public int MovesMade => _moves;
+        /// <summary>Moves made since the current level was loaded. Never goes down (undone moves count).</summary>
+        public int MovesMade => _moves.Value;
 
         /// <summary>Stars earned by the last win of the current level (1..3), or 0 when it hasn't been won since loading.</summary>
         public int LastWinStars => _lastWinStars;
 
-        /// <summary>Coins added to the wallet by that win, or 0 (also 0 without saved progress).</summary>
+        /// <summary>
+        /// Coins added to the wallet by that win, or 0: 0 without saved progress, and 0 on a replay that beat no star of
+        /// the old best.
+        /// </summary>
         public int LastWinCoins => _lastWinCoins;
 
         /// <summary>Name of the level asset being played, or null.</summary>
@@ -191,7 +210,7 @@ namespace Game.View
             _level = result.Level;
             _board.Won += OnWon;
             _board.Moved += OnMoved;
-            _moves = 0;
+            _moves.Reset();
             _lastWinStars = 0;
             _lastWinCoins = 0;
             _current = index;
@@ -227,15 +246,18 @@ namespace Game.View
             return LoadLevel(LevelSequence.First);
         }
 
-        private void OnMoved(MoveInfo move) => _moves++;
+        private void OnMoved(MoveInfo move) => _moves.Count();
 
         private void OnWon()
         {
             if (_current < 0) return;
-            _lastWinStars = WinRewards.StarsFor(_moves, _level?.MinMoves ?? 0);
+            _lastWinStars = WinRewards.StarsFor(_moves.Value, _level?.MinMoves ?? 0);
             var progress = Progress;
             if (progress == null) return;
-            _lastWinCoins = ProgressRules.RecordWin(LevelIds, progress, _current, _lastWinStars);
+            var ids = LevelIds;
+            _lastWinCoins = ProgressRules.CoinsForWin(ids, progress, _current, _lastWinStars, Rewards);
+            WinRewarded?.Invoke(_lastWinStars, _lastWinCoins);
+            ProgressRules.RecordWin(ids, progress, _current, _lastWinStars, Rewards);
         }
 
         private void Unwatch()
