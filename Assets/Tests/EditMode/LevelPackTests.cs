@@ -9,23 +9,21 @@ namespace Game.Tests.EditMode
     /// <summary>
     /// Every level under Assets/Levels must be proven solvable, unique and in its win-rate band, and its stored
     /// <c>solver</c> block must match a fresh solve (run "Bazaar Sort/Run Solver on All Levels" after changing a level).
-    /// Bands: <see cref="DifficultyBands"/>. Each level is analysed once per test run.
+    /// Bands: <see cref="DifficultyBands"/>. Each level is analysed once per test run (an Inconclusive analysis is redone).
     /// </summary>
     public class LevelPackTests
     {
-        private static readonly Dictionary<string, LevelAnalysis> Cache = new Dictionary<string, LevelAnalysis>();
+        // Per run, not static: the editor keeps statics between runs until a domain reload, and an Inconclusive
+        // (budget-hit) analysis is never stored, so a timeout is re-analysed instead of replayed (issue #38).
+        internal readonly LevelAnalysisCache Cache = new LevelAnalysisCache(
+            path => LevelAnalyzer.AnalyzeJson(File.ReadAllText(path), Path.GetFileName(path)));
+
+        [OneTimeSetUp]
+        public void ClearCacheForThisRun() => Cache.Clear();
 
         private static IEnumerable<string> LevelFiles() => SolverRunner.FindLevelFiles();
 
-        private static LevelAnalysis Analyse(string path)
-        {
-            if (!Cache.TryGetValue(path, out var analysis))
-            {
-                analysis = LevelAnalyzer.AnalyzeJson(File.ReadAllText(path), Path.GetFileName(path));
-                Cache[path] = analysis;
-            }
-            return analysis;
-        }
+        private LevelAnalysis Analyse(string path) => Cache.Get(path);
 
         [Test]
         public void Pack_HasLevels()

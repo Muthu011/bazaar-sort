@@ -121,7 +121,7 @@ namespace Game.Solver
 
         /// <summary>
         /// Runs the plays on <see cref="SolverOptions.Threads"/> threads. Each thread has its own search context and
-        /// dead-end oracle; the plays are independent (own seed each) and every alive/dead answer is a fact about the
+        /// dead-end oracle, and the oracles share what they prove (<see cref="LivenessFacts"/>); the plays are independent (own seed each) and every alive/dead answer is a fact about the
         /// board, so the merged numbers are the same for any thread count. <paramref name="winningLine"/> may be
         /// published while the plays run (the shortest solution is searched for at the same time); once it is, each
         /// thread marks its states alive before its next play. That only saves dead-end searches, it changes no answer.
@@ -132,9 +132,10 @@ namespace Game.Solver
             int threads = ThreadCount(options);
 
             var workers = new Worker[threads];
+            var facts = new LivenessFacts();
             for (int w = 0; w < threads; w++)
             {
-                workers[w] = new Worker(w == 0 ? context : context.CreateSibling(), options, winningLine, budget);
+                workers[w] = new Worker(w == 0 ? context : context.CreateSibling(), options, winningLine, budget, facts);
             }
 
             int nextPlay = -1;
@@ -242,13 +243,14 @@ namespace Game.Solver
             private readonly WinningLine _winningLine;
             private bool _lineMarked;
 
-            public Worker(SearchContext context, SolverOptions options, WinningLine winningLine, SearchBudget budget)
+            public Worker(SearchContext context, SolverOptions options, WinningLine winningLine, SearchBudget budget,
+                LivenessFacts facts)
             {
                 _winningLine = winningLine;
                 _context = context;
                 _options = options;
                 _budget = budget;
-                _oracle = new LivenessOracle(context, options.LivenessNodeBudget, budget);
+                _oracle = new LivenessOracle(context, options.LivenessNodeBudget, budget, facts);
                 _scratch = context.Root.Clone();
                 _pool = new Board[options.MaxPlayMoves + 2];
             }
