@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "id": "w1_l015",
+  "world": 1,
+  "index": 15,
+  "role": "hard",
+  "tutorial": null,
+  "moveLimit": null,
+  "timeLimitSec": null,
+  "shelves": [
+    { "id": "s1", "kind": "normal", "lockClears": 0, "layers": [["masala_dabba", "coconut_scraper", "rolling_pin"], ["chai_kettle", "coconut_scraper", "pressure_cooker"], ["chai_kettle", "chai_kettle", "brass_kudam"]] },
+    { "id": "s2", "kind": "normal", "lockClears": 0, "layers": [["masala_dabba", "brass_kudam", "steel_tiffin"], ["chai_kettle", "idli_stand", "tumbler"], ["rolling_pin", "steel_tiffin", "brass_kudam"]] },
+    { "id": "s3", "kind": "normal", "lockClears": 0, "layers": [["masala_dabba", "tumbler", "rolling_pin"], ["steel_tiffin", "coconut_scraper", "brass_kudam"]] },
+    { "id": "s4", "kind": "normal", "lockClears": 0, "layers": [["chai_kettle", "coconut_scraper", "idli_stand"], ["steel_tiffin", "coconut_scraper", "tawa"]] },
+    { "id": "s5", "kind": "normal", "lockClears": 0, "layers": [["masala_dabba", "brass_kudam", "tawa"]] },
+    { "id": "s6", "kind": "normal", "lockClears": 0, "layers": [[null, null, null]] },
+    { "id": "s7", "kind": "normal", "lockClears": 0, "layers": [["steel_tiffin", "idli_stand", "tumbler"], ["idli_stand", "brass_kudam", "idli_stand"], ["chai_kettle", "masala_dabba", "pressure_cooker"]] },
+    { "id": "s8", "kind": "locked", "lockClears": 3, "layers": [["steel_tiffin", "pressure_cooker", "tawa"], ["idli_stand", "masala_dabba", "coconut_scraper"]] }
+  ],
+  "trays": [],
+  "wrapped": [],
+  "solver": { "solvable": true, "minMoves": 31, "deadEndRate": 0.004, "estWinRate": 0.446, "hash": "e0d9cd74b0367006" }
+}
