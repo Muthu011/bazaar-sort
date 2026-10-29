@@ -37,7 +37,8 @@ namespace Game.Solver
     /// <summary>
     /// Rebuilds a node's board by replaying its line with the Core rules. The boards of recently rebuilt nodes are kept,
     /// so the replay starts from the nearest kept ancestor (best-first search with depth tie-breaking usually expands a
-    /// child of a recent node). Kept boards are never moved on: callers only read them or copy them.
+    /// child of a recent node). Kept boards are never moved on: callers only read them or copy them, and only until
+    /// the next <see cref="Get"/>, which may reuse a kept board for another node.
     /// </summary>
     internal sealed class BoardCache
     {
@@ -51,6 +52,12 @@ namespace Game.Solver
             _index = new int[size];
             _boards = new Board[size];
             for (int i = 0; i < size; i++) _index[i] = -1;
+        }
+
+        /// <summary>Forgets every kept node (for a new search over a new tree); the boards are kept for reuse.</summary>
+        public void Clear()
+        {
+            for (int i = 0; i < _index.Length; i++) _index[i] = -1;
         }
 
         public Board Get(Board root, SearchTree tree, int index, List<SolverMove> scratch)
@@ -69,7 +76,12 @@ namespace Game.Solver
             }
             if (scratch.Count == 0) return start;
 
-            var board = start.Clone();
+            // Reuse the board this slot held (its node is no longer the one being expanded) instead of allocating one
+            // per rebuilt node, which kept Mono's collector busy (issue #38).
+            int own = index & _mask;
+            var board = _boards[own];
+            if (board == null || ReferenceEquals(board, start)) board = start.Clone();
+            else board.CopyStateFrom(start);
             for (int k = scratch.Count - 1; k >= 0; k--)
             {
                 var move = scratch[k];
@@ -79,7 +91,6 @@ namespace Game.Solver
                 }
             }
 
-            int own = index & _mask;
             _index[own] = index;
             _boards[own] = board;
             return board;

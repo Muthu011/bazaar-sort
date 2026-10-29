@@ -7,7 +7,9 @@ namespace Game.Solver
     /// <summary>
     /// Reads <see cref="Board"/> states for the search. It never decides what a move does: moves are always applied
     /// with <see cref="Board.TryMove(int,int,int)"/> on a <see cref="Board.Clone"/>, and legality always comes from
-    /// <see cref="Board.CanMove"/>, so the solver cannot disagree with the game.
+    /// <see cref="Board.CanMove"/>, so the solver cannot disagree with the game. (<see cref="PredictChildHeuristic"/>
+    /// works out a plain move's child to decide whether to build it; every child that is expanded is built by the Core
+    /// rules and checked against the prediction.)
     ///
     /// Under the Core rules the position of an item inside a row never matters (a move fills the leftmost free slot, a
     /// triple clears wherever it sits, a layer moves forward only when the front row is empty), so a shelf's state is its
@@ -214,6 +216,17 @@ namespace Game.Solver
             _shelfAgg = new ulong[ShelfCount];
             _cellsWith = new int[types * 4];
             _totals = new int[types];
+            _parentFront = new int[ShelfCount * Shelf.SlotCount];
+            _parentHidden = new int[ShelfCount];
+            _parentLock = new int[ShelfCount];
+            _parentCheap = new ulong[ShelfCount];
+            _parentSlotItems = new string[ShelfCount * Shelf.SlotCount];
+            _parentSlotIds = new int[ShelfCount * Shelf.SlotCount];
+            _parentTotals = new int[types];
+            _parentCellsWith = new int[types * 4];
+            _typeStamp = new int[types];
+            _changedTypes = new int[types];
+            _lossBefore = new int[types];
         }
 
         /// <summary>
@@ -375,14 +388,20 @@ namespace Game.Solver
         {
             for (int i = 0; i < ShelfCount; i++)
             {
-                // Exact packing of front ids (10 bits each), lock counter and pin, mixed with the hidden-layer hash.
-                ulong packed = (uint)_front[i * 3] | ((ulong)(uint)_front[i * 3 + 1] << 10)
-                               | ((ulong)(uint)_front[i * 3 + 2] << 20) | ((ulong)(uint)Math.Min(_lock[i], 1023) << 30)
-                               | (_pinned[i] ? (ulong)(uint)(i + 1) << 40 : 0UL);
-                _keyScratch[i] = Hashing.Step(_hiddenHash[i][_hidden[i]], packed);
+                _keyScratch[i] = CheapShelf(i, _front[i * 3], _front[i * 3 + 1], _front[i * 3 + 2], _hidden[i], _lock[i]);
             }
             if (_canonical) SortKeys(_keyScratch);
             return CombineFast(KeySeedA ^ 0x2222UL, KeySeedB ^ 0x2222UL);
+        }
+
+        // One shelf's part of the cheap key: exact packing of front ids (10 bits each), lock counter and pin, mixed with
+        // the hidden-layer hash.
+        private ulong CheapShelf(int i, int x, int y, int z, int hidden, int lockLeft)
+        {
+            ulong packed = (uint)x | ((ulong)(uint)y << 10) | ((ulong)(uint)z << 20)
+                           | ((ulong)(uint)Math.Min(lockLeft, 1023) << 30)
+                           | (_pinned[i] ? (ulong)(uint)(i + 1) << 40 : 0UL);
+            return Hashing.Step(_hiddenHash[i][hidden], packed);
         }
 
         // Like Combine with one mix per shelf for the second half.
@@ -772,6 +791,303 @@ namespace Game.Solver
             }
             // Second bound: items that stay put clear in their own cell, so a cell keeps items of one type at most.
             return Math.Max(h, items - cellBound);
+        }
+
+        // ---------------------------------------------------------------------------------------------------------
+        // Child heuristic from the parent (issue #38)
+
+        /// <summary>
+        /// Remembers <paramref name="parent"/>'s heuristic tallies so that <see cref="ChildHeuristic"/> can score its
+        /// children from the two shelves a move touches. Reads the board like <see cref="Key(Board)"/> does.
+        /// </summary>
+        public void BeginChildren(Board parent)
+        {
+            Read(parent);
+            _parentItems = parent.ItemCount;
+            Array.Copy(_front, _parentFront, _front.Length);
+            Array.Copy(_hidden, _parentHidden, _hidden.Length);
+            Array.Copy(_lock, _parentLock, _lock.Length);
+            for (int i = 0; i < ShelfCount; i++)
+            {
+                _parentCheap[i] = CheapShelf(i, _front[i * 3], _front[i * 3 + 1], _front[i * 3 + 2], _hidden[i], _lock[i]);
+            }
+            for (int i = 0; i < ShelfCount; i++)
+            {
+                var shelf = parent.GetShelf(i);
+                for (int slot = 0; slot < Shelf.SlotCount; slot++)
+                {
+                    string item = shelf.GetFrontItem(slot);
+                    _parentSlotItems[i * 3 + slot] = item;
+                    _parentSlotIds[i * 3 + slot] = FastId(item);
+                }
+            }
+            Array.Clear(_parentTotals, 0, _parentTotals.Length);
+            Array.Clear(_parentCellsWith, 0, _parentCellsWith.Length);
+            _parentCellBound = 0;
+            int items = 0;
+            for (int i = 0; i < ShelfCount; i++)
+            {
+                items += ShelfTally(i, _front[i * 3], _front[i * 3 + 1], _front[i * 3 + 2], _hidden[i], 1,
+                    out int cellMax);
+                _parentCellBound += cellMax;
+            }
+            _parentTotalItems = items;
+            _parentLoss = 0;
+            for (int t = 1; t < _parentTotals.Length; t++) _parentLoss += Loss(t);
+        }
+
+        /// <summary>
+        /// <see cref="Heuristic"/> of <paramref name="child"/>, the board <see cref="BeginChildren"/>'s parent becomes
+        /// after <paramref name="move"/> (applied by the Core rules), or -1 when the move cleared a triple (then lock
+        /// counters and more shelves may have changed, and the caller reads the whole board). Without a clear only the
+        /// move's two shelves differ from the parent, so only they are read. Equal to the full heuristic (tested).
+        /// After it, <see cref="ChildCheapKey"/> gives the child's <see cref="CheapKey"/> the same way.
+        /// </summary>
+        public int ChildHeuristic(Board child, SolverMove move)
+        {
+            if (child.ItemCount != _parentItems) return -1;
+            _changedCount = 0;
+            _stamp++;
+            int a = move.FromShelf, b = move.ToShelf;
+            ReadShelfIds(child, a, out int ax, out int ay, out int az, out int ar);
+            ReadShelfIds(child, b, out int bx, out int by, out int bz, out int br);
+            _childA = a;
+            _childB = b;
+            _childCheapA = CheapShelf(a, ax, ay, az, ar, child.GetShelf(a).LockClearsLeft);
+            _childCheapB = CheapShelf(b, bx, by, bz, br, child.GetShelf(b).LockClearsLeft);
+            return Score(a, ax, ay, az, ar, b, bx, by, bz, br);
+        }
+
+        /// <summary>
+        /// The <see cref="ChildHeuristic"/> that <paramref name="move"/> will give, worked out from
+        /// <see cref="BeginChildren"/>'s parent without making the move, for a move that clears nothing and reveals no
+        /// layer (then the item just leaves one front row for the other); -1 for any other move. The searches use it to
+        /// skip building children they put off, never to replace the Core rules: the shortest-solution search builds
+        /// every child it keeps and checks it against the prediction, and the dead-end search checks a predicted child
+        /// when it rebuilds it to expand it (ChildScoringTests compare all of it with real child boards).
+        /// </summary>
+        public int PredictChildHeuristic(SolverMove move)
+        {
+            int a = move.FromShelf, b = move.ToShelf;
+            int t = _parentSlotIds[a * 3 + move.FromSlot];
+            int px = _parentFront[a * 3], py = _parentFront[a * 3 + 1], pz = _parentFront[a * 3 + 2];
+            int ax, ay, az;
+            if (px == t) GetSorted(0, py, pz, out ax, out ay, out az);
+            else if (py == t) GetSorted(px, 0, pz, out ax, out ay, out az);
+            else GetSorted(px, py, 0, out ax, out ay, out az);
+            if (az == 0 && _parentHidden[a] > 0) return -1; // the row empties and the next layer comes forward
+
+            int qx = _parentFront[b * 3], qy = _parentFront[b * 3 + 1], qz = _parentFront[b * 3 + 2];
+            int same = (qx == t ? 1 : 0) + (qy == t ? 1 : 0) + (qz == t ? 1 : 0);
+            if (same == GameRules.MatchCount - 1 || qx != 0) return -1; // a triple forms (or no free slot to model)
+            GetSorted(t, qy, qz, out int bx, out int by, out int bz);
+            _changedCount = 0;
+            _stamp++;
+            _childA = a;
+            _childB = b;
+            _childCheapA = CheapShelf(a, ax, ay, az, _parentHidden[a], _parentLock[a]);
+            _childCheapB = CheapShelf(b, bx, by, bz, _parentHidden[b], _parentLock[b]);
+            _childCountA = (ax != 0 ? 1 : 0) + (ay != 0 ? 1 : 0) + (az != 0 ? 1 : 0);
+            _childCountB = (bx != 0 ? 1 : 0) + (by != 0 ? 1 : 0) + (bz != 0 ? 1 : 0);
+            return Score(a, ax, ay, az, _parentHidden[a], b, bx, by, bz, _parentHidden[b]);
+        }
+
+        /// <summary>
+        /// <see cref="Board.HasLegalMove"/> for the child the last <see cref="PredictChildHeuristic"/> call worked out
+        /// (it must not have returned -1): some open shelf has a front item and another open shelf a free front slot.
+        /// </summary>
+        public bool PredictedChildHasLegalMove()
+        {
+            int sources = 0, targets = 0, lastSource = -1, lastTarget = -1;
+            for (int i = 0; i < ShelfCount; i++)
+            {
+                if (_parentLock[i] > 0) continue;
+                int count = i == _childA ? _childCountA : i == _childB ? _childCountB
+                    : (_parentFront[i * 3] != 0 ? 1 : 0) + (_parentFront[i * 3 + 1] != 0 ? 1 : 0) + (_parentFront[i * 3 + 2] != 0 ? 1 : 0);
+                if (count > 0)
+                {
+                    sources++;
+                    lastSource = i;
+                }
+                if (count < Shelf.SlotCount)
+                {
+                    targets++;
+                    lastTarget = i;
+                }
+                if (sources > 1 && targets > 1) return true;
+            }
+            return sources > 0 && targets > 0 && !(sources == 1 && targets == 1 && lastSource == lastTarget);
+        }
+
+        private int _childCountA;
+        private int _childCountB;
+        private readonly int[] _parentLock;
+
+        // Turns shelves a and b's parent tallies into the child's, scores, then puts the parent's back.
+        private int Score(int a, int ax, int ay, int az, int ar, int b, int bx, int by, int bz, int br)
+        {
+            int bound = _parentCellBound + ShelfChange(a, ax, ay, az, ar, true) + ShelfChange(b, bx, by, bz, br, true);
+            int loss = _parentLoss;
+            for (int k = 0; k < _changedCount; k++) loss += Loss(_changedTypes[k]) - _lossBefore[k];
+            ShelfChange(a, ax, ay, az, ar, false);
+            ShelfChange(b, bx, by, bz, br, false);
+            return Math.Max(loss, _parentTotalItems - bound);
+        }
+
+        /// <summary>
+        /// <see cref="CheapKey"/> of the child the last <see cref="ChildHeuristic"/> or
+        /// <see cref="PredictChildHeuristic"/> call scored (it must not have returned -1): the parent's shelf parts with
+        /// the move's two shelves replaced.
+        /// </summary>
+        public StateKey ChildCheapKey()
+        {
+            Array.Copy(_parentCheap, _keyScratch, ShelfCount);
+            _keyScratch[_childA] = _childCheapA;
+            _keyScratch[_childB] = _childCheapB;
+            if (_canonical) SortKeys(_keyScratch);
+            return CombineFast(KeySeedA ^ 0x2222UL, KeySeedB ^ 0x2222UL);
+        }
+
+        private int _childA;
+        private int _childB;
+        private ulong _childCheapA;
+        private ulong _childCheapB;
+        private readonly ulong[] _parentCheap;
+        private int _parentItems;
+        private int _parentTotalItems;
+        private int _parentCellBound;
+        private int _parentLoss;
+        private readonly int[] _parentFront;
+        private readonly int[] _parentHidden;
+        private readonly string[] _parentSlotItems;
+        private readonly int[] _parentSlotIds;
+        private readonly int[] _parentTotals;
+        private readonly int[] _parentCellsWith;
+        // Types whose tallies ChildHeuristic changed, with their loss before the change.
+        private readonly int[] _typeStamp;
+        private readonly int[] _changedTypes;
+        private readonly int[] _lossBefore;
+        private int _changedCount;
+        private int _stamp;
+
+        // Changes shelf i's tallies from the parent's state to the child's (forward) or back, and returns the change in
+        // the cell bound. With the same number of hidden layers only the front row differs.
+        private int ShelfChange(int i, int x, int y, int z, int hidden, bool forward)
+        {
+            int px = _parentFront[i * 3], py = _parentFront[i * 3 + 1], pz = _parentFront[i * 3 + 2];
+            int ph = _parentHidden[i];
+            if (hidden == ph)
+            {
+                if (forward) CellChange(px, py, pz, x, y, z);
+                else CellChange(x, y, z, px, py, pz);
+                return CellMax(x, y, z) - CellMax(px, py, pz);
+            }
+            ShelfTally(i, forward ? px : x, forward ? py : y, forward ? pz : z, forward ? ph : hidden, -1,
+                out int before, forward);
+            ShelfTally(i, forward ? x : px, forward ? y : py, forward ? z : pz, forward ? hidden : ph, 1,
+                out int after, forward);
+            return after - before;
+        }
+
+        // One cell goes from sorted ids (ox, oy, oz) to (nx, ny, nz): adjusts each type whose count in it changed.
+        private void CellChange(int ox, int oy, int oz, int nx, int ny, int nz)
+        {
+            TypeChange(ox, ox, oy, oz, nx, ny, nz);
+            if (oy != ox) TypeChange(oy, ox, oy, oz, nx, ny, nz);
+            if (oz != oy) TypeChange(oz, ox, oy, oz, nx, ny, nz);
+            if (nx != ox && nx != oy && nx != oz) TypeChange(nx, ox, oy, oz, nx, ny, nz);
+            if (ny != nx && ny != ox && ny != oy && ny != oz) TypeChange(ny, ox, oy, oz, nx, ny, nz);
+            if (nz != ny && nz != ox && nz != oy && nz != oz) TypeChange(nz, ox, oy, oz, nx, ny, nz);
+        }
+
+        private void TypeChange(int t, int ox, int oy, int oz, int nx, int ny, int nz)
+        {
+            if (t == 0) return;
+            int before = (ox == t ? 1 : 0) + (oy == t ? 1 : 0) + (oz == t ? 1 : 0);
+            int after = (nx == t ? 1 : 0) + (ny == t ? 1 : 0) + (nz == t ? 1 : 0);
+            if (before == after) return;
+            Track(t);
+            _parentTotals[t] += after - before;
+            if (before > 0) _parentCellsWith[t * 4 + before]--;
+            if (after > 0) _parentCellsWith[t * 4 + after]++;
+        }
+
+        private void Track(int type)
+        {
+            if (_typeStamp[type] == _stamp) return;
+            _typeStamp[type] = _stamp;
+            _changedTypes[_changedCount] = type;
+            _lossBefore[_changedCount] = Loss(type);
+            _changedCount++;
+        }
+
+        private void ReadShelfIds(Board board, int i, out int x, out int y, out int z, out int hidden)
+        {
+            var shelf = board.GetShelf(i);
+            GetSorted(SlotId(shelf, i, 0), SlotId(shelf, i, 1), SlotId(shelf, i, 2), out x, out y, out z);
+            hidden = shelf.HiddenLayerCount;
+            if (hidden > _rootHidden[i]) throw new ArgumentException("Board does not descend from the search root.");
+        }
+
+        // A child's front item's type id; most slots still hold the parent's item, whose id is known.
+        private int SlotId(Shelf shelf, int i, int slot)
+        {
+            string item = shelf.GetFrontItem(slot);
+            int o = i * 3 + slot;
+            return (object)item == (object)_parentSlotItems[o] ? _parentSlotIds[o] : FastId(item);
+        }
+
+        // Items of type t that can't all stay put (the first bound of the heuristic, for one type).
+        private int Loss(int t)
+        {
+            int total = _parentTotals[t];
+            int triples = total / GameRules.MatchCount;
+            int keep = 0;
+            for (int n = 3; n >= 1 && triples > 0; n--)
+            {
+                int take = Math.Min(triples, _parentCellsWith[t * 4 + n]);
+                keep += take * n;
+                triples -= take;
+            }
+            return total - keep;
+        }
+
+        // Adds (sign 1) or removes (sign -1) one shelf's cells in the parent tallies; returns its item count.
+        private int ShelfTally(int i, int x, int y, int z, int hidden, int sign, out int cellMax, bool track = false)
+        {
+            int items = 0;
+            if (x != 0)
+            {
+                int n = 1 + (y == x ? 1 : 0) + (z == x ? 1 : 0);
+                Tally(x, n, sign, track);
+                items += n;
+            }
+            if (y != 0 && y != x)
+            {
+                int n = 1 + (z == y ? 1 : 0);
+                Tally(y, n, sign, track);
+                items += n;
+            }
+            if (z != 0 && z != y)
+            {
+                Tally(z, 1, sign, track);
+                items += 1;
+            }
+            var entries = _hiddenCells[i][hidden];
+            for (int e = 0; e < entries.Length; e++)
+            {
+                Tally(entries[e] >> 2, entries[e] & 3, sign, track);
+                items += entries[e] & 3;
+            }
+            cellMax = CellMax(x, y, z) + _hiddenCellMax[i][hidden];
+            return items;
+        }
+
+        private void Tally(int type, int n, int sign, bool track)
+        {
+            if (track) Track(type);
+            _parentTotals[type] += sign * n;
+            _parentCellsWith[type * 4 + n] += sign;
         }
 
         private void Count(int type, int n)

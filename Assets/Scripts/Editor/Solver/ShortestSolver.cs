@@ -46,6 +46,17 @@ namespace Game.Solver
     /// of the node being expanded is accepted at once: that node had the lowest f = g + h, a non-won board has h &gt;= 1,
     /// so every other solution costs at least g + 1.
     ///
+    /// Partial expansion (issue #38): most children of an expanded state have a higher f than it and are never expanded
+    /// before the solution is found, yet building their keys was most of the work. So a state is expanded in rounds: each
+    /// round pushes only the children whose f equals the round's threshold (scored from the parent's tallies by
+    /// <see cref="SearchContext.ChildHeuristic"/>), and the state goes back on the open list with the lowest f it put
+    /// off. A child that moves one item without clearing or revealing anything has its heuristic worked out before it is
+    /// built (<see cref="SearchContext.PredictChildHeuristic"/>), so the children a round puts off are mostly never
+    /// built; every child the search keeps is built by the Core rules and checked against that. That is Partial
+    /// Expansion A* (Yoshizumi, Miura and Ishida, 2000): every child is still pushed before any state
+    /// with a higher f is expanded, so the order by f, and with it optimality, is that of plain A*. The plain breadth-first
+    /// reference search (no heuristic) expands every state in one round.
+    ///
     /// If the node budget or time limit runs out first, the answer is <see cref="Solvability.Unknown"/>, never a guess.
     /// Unsolvable is reported only when every reachable state has been expanded.
     /// </summary>
@@ -79,33 +90,48 @@ namespace Game.Solver
             var open = new MinHeap();
             var moves = new List<SolverMove>();
             var replay = new List<SolverMove>();
+            // Per node: the f it was pushed with (its round's threshold) and the threshold of its last round (-1: none).
+            var pushedF = new List<int>();
+            var lastRound = new List<int>();
             // Children are tried on one scratch board (Board.CopyStateFrom + Board.TryMove), so no board is allocated
             // per child; only expanded nodes' boards are rebuilt.
             var scratch = root.Clone();
 
             bool reference = options.ReferenceMode;
             seen[context.CheapKey(root)] = 0;
+            int rootF = reference ? 0 : context.HeuristicOfLastRead();
             tree.Add(-1, default, 0);
-            open.Push(reference ? 0 : context.HeuristicOfLastRead(), 0, 0);
+            pushedF.Add(rootF);
+            lastRound.Add(-1);
+            open.Push(rootF, 0, 0);
             var cache = new BoardCache();
             long expanded = 0;
+            long rounds = 0;
             long generated = 1;
 
             while (open.Count > 0)
             {
                 int index = open.Pop();
                 int depth = tree.Depth[index];
+                int previous = lastRound[index];
                 var board = cache.Get(root, tree, index, replay);
                 var key = context.Key(board);
-                if (closed.TryGetValue(key, out int done) && done <= depth) continue;
-                closed[key] = depth;
-
-                expanded++;
-                if (expanded > options.MaxExpandedNodes)
+                if (previous < 0)
                 {
-                    return Unknown($"node budget of {options.MaxExpandedNodes} expanded states ran out", expanded, generated, stopwatch);
+                    if (closed.TryGetValue(key, out int done) && done <= depth) continue;
+                    closed[key] = depth;
+                    expanded++;
+                    if (expanded > options.MaxExpandedNodes)
+                    {
+                        return Unknown($"node budget of {options.MaxExpandedNodes} expanded states ran out", expanded, generated, stopwatch);
+                    }
                 }
-                if ((expanded & 255) == 0 && stopwatch.Elapsed.TotalSeconds > options.TimeLimitSeconds)
+                else if (closed[key] < depth)
+                {
+                    continue; // a shallower copy of this state was expanded since: its rounds cover these children
+                }
+                rounds++;
+                if ((rounds & 255) == 0 && stopwatch.Elapsed.TotalSeconds > options.TimeLimitSeconds)
                 {
                     return Unknown($"time limit of {options.TimeLimitSeconds:0.#} s ran out", expanded, generated, stopwatch);
                 }
@@ -114,15 +140,31 @@ namespace Game.Solver
                     return Unknown(budget.Reason, expanded, generated, stopwatch);
                 }
 
+                // The reference search has no heuristic: one round takes every child.
+                int threshold = reference ? int.MaxValue : pushedF[index];
+                int putOff = int.MaxValue;
+                if (!reference) context.BeginChildren(board);
                 context.GenerateMoves(board, moves, !reference);
                 int childDepth = depth + 1;
                 for (int m = 0; m < moves.Count; m++)
                 {
+                    var move = moves[m];
+                    // A child whose f is known without making the move and falls outside this round is not built.
+                    int predicted = reference ? -1 : context.PredictChildHeuristic(move);
+                    if (predicted >= 0)
+                    {
+                        int predictedF = childDepth + predicted;
+                        if (predictedF <= previous) continue;
+                        if (predictedF > threshold)
+                        {
+                            if (predictedF < putOff) putOff = predictedF;
+                            continue;
+                        }
+                    }
                     if (!budget.Charge())
                     {
                         return Unknown(budget.Reason, expanded, generated, stopwatch);
                     }
-                    var move = moves[m];
                     scratch.CopyStateFrom(board);
                     if (!scratch.TryMove(move.FromShelf, move.FromSlot, move.ToShelf, out var result))
                     {
@@ -131,21 +173,58 @@ namespace Game.Solver
                     generated++;
                     if (scratch.IsWon)
                     {
+                        // Only in a node's first round: a won child has f = depth + 1 <= f of the node (h >= 1).
                         var line = new List<SolverMove>();
                         tree.LineTo(index, line);
                         line.Add(move);
                         return new SolveResult(Solvability.Solvable, line, expanded, generated,
                             stopwatch.Elapsed.TotalSeconds, null);
                     }
+                    if (!scratch.HasLegalMove()) continue; // stuck: can never win
 
-                    var cheap = context.CheapKey(scratch);
+                    StateKey cheap = default;
+                    bool keyed = false;
+                    int h = 0;
+                    if (!reference)
+                    {
+                        h = context.ChildHeuristic(scratch, move);
+                        if (predicted >= 0 && h != predicted)
+                        {
+                            throw new InvalidOperationException(
+                                $"Solver predicted heuristic {predicted} for {move} but the Core board gives {h}.");
+                        }
+                        if (h < 0)
+                        {
+                            // A clear: read the whole board.
+                            cheap = context.CheapKey(scratch);
+                            keyed = true;
+                            h = context.HeuristicOfLastRead();
+                        }
+                    }
+                    int f = childDepth + h;
+                    if (f <= previous) continue; // pushed (or found a duplicate) in an earlier round
+                    if (f > threshold)
+                    {
+                        if (f < putOff) putOff = f;
+                        continue;
+                    }
+
+                    if (!keyed) cheap = reference ? context.CheapKey(scratch) : context.ChildCheapKey();
                     if (seen.TryGetValue(cheap, out int known) && known <= childDepth) continue;
                     seen[cheap] = childDepth;
-                    if (!scratch.HasLegalMove()) continue; // stuck: can never win
-                    int h = reference ? 0 : context.HeuristicOfLastRead();
 
                     int child = tree.Add(index, move, childDepth);
-                    open.Push(childDepth + h, childDepth, child);
+                    pushedF.Add(f);
+                    lastRound.Add(-1);
+                    open.Push(f, childDepth, child);
+                }
+
+                if (putOff != int.MaxValue)
+                {
+                    // Come back for the children put off when the search reaches their f.
+                    lastRound[index] = threshold;
+                    pushedF[index] = putOff;
+                    open.Push(putOff, depth, index);
                 }
             }
 
