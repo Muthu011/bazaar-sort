@@ -9,10 +9,22 @@ set -euo pipefail
 UNITY="${UNITY:-/Applications/Unity/Hub/Editor/6000.6.6f1/Unity.app/Contents/MacOS/Unity}"
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 COPY="${1:-${TMPDIR:-/tmp}/bazaar-sort-perf}"
+MARKER=".bazaar-sort-perf-copy"
 
+# rsync --delete empties the copy dir first, so refuse anything that isn't a dedicated copy: "/", the repo, a folder
+# holding the repo, a folder inside the repo, or a non-empty folder this script didn't create (no marker file).
 mkdir -p "$COPY"
+COPY="$(cd "$COPY" && pwd -P)"
+REPO="$(cd "$REPO" && pwd -P)"
+case "$REPO/" in "$COPY"/*) echo "refusing: $COPY is the repo or contains it" >&2; exit 2 ;; esac
+case "$COPY/" in "$REPO"/*) echo "refusing: $COPY is inside the repo" >&2; exit 2 ;; esac
+if [ -n "$(ls -A "$COPY")" ] && [ ! -f "$COPY/$MARKER" ]; then
+  echo "refusing: $COPY is not empty and has no $MARKER file" >&2; exit 2
+fi
+touch "$COPY/$MARKER"
+
 rsync -a --delete --exclude Temp --exclude Logs --exclude UserSettings --exclude .git \
-  --exclude perf-results.xml --exclude perf-log.txt "$REPO/" "$COPY/"
+  --exclude perf-results.xml --exclude perf-log.txt --exclude "$MARKER" "$REPO/" "$COPY/"
 
 "$UNITY" -batchmode -nographics -projectPath "$COPY" -runTests -testPlatform EditMode \
   -testCategory Performance -testResults "$COPY/perf-results.xml" -logFile "$COPY/perf-log.txt" || status=$?
