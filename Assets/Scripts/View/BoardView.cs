@@ -57,6 +57,12 @@ namespace Game.View
         private const int PadlockLabelOrder = 12;
         private const int StatusOrder = 30;
         private const int LabelFontSize = 64;
+
+        /// <summary>Status line ("Cleared!") centre, as a fraction of the top reserve up from the playfield's top.</summary>
+        public const float StatusCentreInReserve = 0.25f;
+
+        /// <summary>Tallest the status line gets, as a fraction of the top reserve, so it stays under the level number.</summary>
+        public const float StatusMaxHeightInReserve = 0.36f;
         private const float LabelHeightInTile = 0.6f;
 
         internal const string WonText = "Cleared!";
@@ -321,11 +327,13 @@ namespace Game.View
                 PlaceDragShadow(dragged.Renderer.transform.position * PixelsPerUnit);
             }
 
-            // Status line sits in the HUD reserve above the playfield.
+            // Status line sits in the lower part of the top bar (the HUD's level number uses the upper part, issue #40).
             var playfield = _layout.Playfield;
-            float statusY = (playfield.yMax + safeArea.yMax) * 0.5f;
+            float reserve = Mathf.Max(0f, safeArea.yMax - playfield.yMax);
+            float statusY = playfield.yMax + reserve * StatusCentreInReserve;
+            float statusScale = Mathf.Min(labelScale, reserve * StatusMaxHeightInReserve / PixelsPerUnit * 10f / LabelFontSize);
             _status.transform.position = new Vector3(playfield.center.x / PixelsPerUnit, statusY / PixelsPerUnit, 0f);
-            _status.characterSize = labelScale;
+            _status.characterSize = statusScale;
         }
 
         // ---- Input feedback (IBoardInputView) ----

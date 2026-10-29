@@ -7,26 +7,28 @@ using UnityEngine.UI;
 namespace Game.UI
 {
     /// <summary>
-    /// The in-game HUD (issue #21), built from code with uGUI on its own screen-space camera canvas: the clear counter
-    /// (coin icon and a number, display only, see <see cref="ClearCounter"/>) and the haptics on/off toggle, right-aligned
-    /// in the bottom reserve (<see cref="HudLayout"/>). On every <see cref="BoardView.ClearShown"/> that animated, a coin
+    /// The in-game HUD (issues #21, #40), built from code with uGUI on its own screen-space camera canvas, laid out by
+    /// <see cref="HudLayout"/> inside the safe area. Top bar: the level number. Bottom bar: placeholder booster slots
+    /// (boosters arrive in #42), the clear counter (coin icon and a number, display only, see <see cref="ClearCounter"/>)
+    /// and the settings button, which opens the <see cref="SettingsPanel"/> with the haptics on/off toggle. On every <see cref="BoardView.ClearShown"/> that animated, a coin
     /// flies from the triple to the counter (DOTween, pooled: <see cref="UiFeel.CoinPool"/> coins, each with one tween
     /// built once and restarted) and the number ticks up as it lands. Resets on every level load.
     /// Thin: no rules; the setting lives in <see cref="ISettingsService"/>.
     /// </summary>
     public sealed class GameHud : MonoBehaviour
     {
-        internal const string HapticsOnLabel = "Haptics\nOn";
-        internal const string HapticsOffLabel = "Haptics\nOff";
+        internal const string HapticsOnLabel = "On";
+        internal const string HapticsOffLabel = "Off";
+        internal const string LevelPrefix = "Level ";
 
         /// <summary>Above the board and its particles, below the result panels (100) and the dev overlay (110).</summary>
         private const int CanvasSortingOrder = 50;
 
         private static readonly Color32 PillColor = new Color32(0x1B, 0x0F, 0x0C, 0xA0);
         private static readonly Color32 CounterText = new Color32(0xFF, 0xF8, 0xE1, 0xFF);
-        private static readonly Color32 ToggleOn = new Color32(0x00, 0x83, 0x8F, 0xFF);   // peacock teal
-        private static readonly Color32 ToggleOff = new Color32(0x6D, 0x5D, 0x58, 0xFF);  // muted brown-grey
-        private static readonly Color32 ToggleText = new Color32(0xFF, 0xFF, 0xFF, 0xFF);
+        private static readonly Color32 BoosterSlotColor = new Color32(0x1B, 0x0F, 0x0C, 0x50);
+        private static readonly Color32 GearColor = new Color32(0xFF, 0xF4, 0xDC, 0xFF);  // card cream
+        private static readonly Color32 LevelColor = new Color32(0xFF, 0xF8, 0xE1, 0xFF);
 
         [SerializeField] private BoardView _view;
         [SerializeField] private LevelBootstrap _levels;
@@ -45,8 +47,10 @@ namespace Game.UI
         private RectTransform _pill;
         private RectTransform _icon;
         private Text _count;
-        private Button _toggle;
-        private Text _toggleLabel;
+        private Text _level;
+        private Image[] _boosters;
+        private Button _settingsButton;
+        private SettingsPanel _settingsPanel;
         private Coin[] _coins;
         private Tween _punch;
         private bool _built;
@@ -126,7 +130,7 @@ namespace Game.UI
             var pillImage = UiParts.Image(_safeArea, "Clear Counter", PillColor, PlaceholderSprites.RoundedSquare);
             pillImage.raycastTarget = false;
             _pill = pillImage.rectTransform;
-            _pill.anchorMin = _pill.anchorMax = new Vector2(1f, 0f);
+            Corner(_pill);
             var iconImage = UiParts.Image(_pill, "Coin Icon", Color.white, PlaceholderSprites.Coin, sliced: false);
             iconImage.raycastTarget = false;
             _icon = iconImage.rectTransform;
@@ -140,16 +144,32 @@ namespace Game.UI
             countRect.offsetMin = new Vector2(40f, 0f);
             countRect.offsetMax = new Vector2(-12f, 0f);
 
-            // Haptics toggle.
-            var toggleImage = UiParts.Image(_safeArea, "Haptics Toggle", ToggleOn, PlaceholderSprites.RoundedSquare);
-            var toggleRect = toggleImage.rectTransform;
-            toggleRect.anchorMin = toggleRect.anchorMax = new Vector2(1f, 0f);
-            _toggle = toggleImage.gameObject.AddComponent<Button>();
-            _toggle.targetGraphic = toggleImage;
-            _toggle.onClick.AddListener(ToggleHaptics);
-            toggleImage.gameObject.AddComponent<ButtonPress>();
-            _toggleLabel = UiParts.Text(toggleRect, "Label", font, HapticsOnLabel, HudLayout.ToggleFontDp, ToggleText, TextAnchor.MiddleCenter);
-            UiParts.Stretch(_toggleLabel.rectTransform);
+            // Top bar: the level number.
+            _level = UiParts.Text(_safeArea, "Level Number", font, string.Empty, HudLayout.LevelFontDp, LevelColor, TextAnchor.MiddleCenter);
+            Corner(_level.rectTransform);
+
+            // Bottom bar: placeholder booster slots (no boosters yet: they take no taps).
+            _boosters = new Image[HudLayout.BoosterSlots];
+            for (int i = 0; i < _boosters.Length; i++)
+            {
+                _boosters[i] = UiParts.Image(_safeArea, "Booster Slot " + (i + 1), BoosterSlotColor, PlaceholderSprites.RoundedSquare);
+                _boosters[i].raycastTarget = false;
+                Corner(_boosters[i].rectTransform);
+            }
+
+            // Settings button: a gear on a dark pill.
+            var settingsImage = UiParts.Image(_safeArea, "Settings Button", PillColor, PlaceholderSprites.RoundedSquare);
+            Corner(settingsImage.rectTransform);
+            _settingsButton = settingsImage.gameObject.AddComponent<Button>();
+            _settingsButton.targetGraphic = settingsImage;
+            _settingsButton.onClick.AddListener(OpenSettings);
+            settingsImage.gameObject.AddComponent<ButtonPress>();
+            var gear = UiParts.Image(settingsImage.rectTransform, "Gear", GearColor, PlaceholderSprites.Gear, sliced: false);
+            gear.raycastTarget = false;
+            gear.rectTransform.anchorMin = gear.rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
+            gear.rectTransform.sizeDelta = new Vector2(28f, 28f);
+
+            _settingsPanel = new SettingsPanel(transform, viewCamera, font, ToggleHaptics, CloseSettings);
 
             // Coin pool, drawn over the HUD row.
             _coins = new Coin[UiFeel.CoinPool];
@@ -163,6 +183,8 @@ namespace Game.UI
 
             _built = true;
             RefreshToggle();
+            // The bootstrap may have loaded its first level before this HUD was built.
+            if (_levels != null && _levels.CurrentIndex >= 0) ShowLevel(_levels.CurrentIndex + 1);
             LayoutForScreen();
         }
 
@@ -195,12 +217,26 @@ namespace Game.UI
             _safeArea.offsetMax = Vector2.zero;
 
             var safeDp = new Vector2(safeAreaPx.width / density, safeAreaPx.height / density);
-            var metrics = HudLayout.Compute(safeDp, BoardLayoutSettings.Default.BottomReserveFraction);
-            var toggle = (RectTransform)_toggle.transform;
-            toggle.sizeDelta = metrics.Toggle;
-            toggle.anchoredPosition = metrics.ToggleCentre;
-            _pill.sizeDelta = metrics.Counter;
-            _pill.anchoredPosition = metrics.CounterCentre;
+            var settings = BoardLayoutSettings.Default;
+            var m = HudLayout.Compute(safeDp, settings.TopReserveFraction, settings.BottomReserveFraction);
+            Place(_level.rectTransform, m.LevelLabel);
+            Place(_pill, m.Counter);
+            Place((RectTransform)_settingsButton.transform, m.Settings);
+            for (int i = 0; i < _boosters.Length; i++) Place(_boosters[i].rectTransform, m.Boosters[i]);
+            _settingsPanel.Layout(safeAreaPx, density);
+        }
+
+        /// <summary>Anchors and pivots a HUD piece at the safe area's bottom-left, so HudLayout rectangles map 1:1.</summary>
+        private static void Corner(RectTransform rect)
+        {
+            rect.anchorMin = rect.anchorMax = Vector2.zero;
+            rect.pivot = Vector2.zero;
+        }
+
+        private static void Place(RectTransform rect, Rect r)
+        {
+            rect.sizeDelta = r.size;
+            rect.anchoredPosition = r.position;
         }
 
         // ---- Events ----
@@ -226,7 +262,38 @@ namespace Game.UI
             _subscribedSettings = null;
         }
 
-        private void OnLevelLoaded(int index) => ResetCounter();
+        private void OnLevelLoaded(int index)
+        {
+            ResetCounter();
+            ShowLevel(index + 1);
+            CloseSettings();
+        }
+
+        /// <summary>Shows "Level <paramref name="number"/>" in the top bar (1-based; level loads call it).</summary>
+        public void ShowLevel(int number)
+        {
+            if (_built) _level.text = number > 0 ? LevelPrefix + number : string.Empty;
+        }
+
+        // ---- Settings panel ----
+
+        public bool IsSettingsOpen => _built && _settingsPanel.IsOpen;
+
+        /// <summary>Opens the settings panel; the board ignores the pointer while it is open.</summary>
+        public void OpenSettings()
+        {
+            if (!_built) return;
+            RefreshToggle();
+            _settingsPanel.SetOpen(true);
+            if (_view != null) _view.InputBlocked = true;
+        }
+
+        public void CloseSettings()
+        {
+            if (!_built || !_settingsPanel.IsOpen) return;
+            _settingsPanel.SetOpen(false);
+            if (_view != null) _view.InputBlocked = false;
+        }
 
         /// <summary>Back to 0 and every flying coin dropped (level load, Retry, Next, Replay).</summary>
         public void ResetCounter()
@@ -269,9 +336,7 @@ namespace Game.UI
         private void RefreshToggle()
         {
             if (!_built) return;
-            bool on = Settings.HapticsEnabled;
-            _toggleLabel.text = on ? HapticsOnLabel : HapticsOffLabel;
-            ((Image)_toggle.targetGraphic).color = on ? ToggleOn : ToggleOff;
+            _settingsPanel.ShowHaptics(Settings.HapticsEnabled);
         }
 
         private Coin FreeCoin()
@@ -295,8 +360,14 @@ namespace Game.UI
 
         internal ClearCounter Counter => _counter;
         internal string CountText => _count == null ? null : _count.text;
-        internal Button HapticsToggle => _toggle;
-        internal string HapticsLabel => _toggleLabel == null ? null : _toggleLabel.text;
+        internal Button HapticsToggle => _settingsPanel?.HapticsToggle;
+        internal string HapticsLabel => _settingsPanel?.HapticsLabel;
+        internal Button SettingsButton => _settingsButton;
+        internal Button SettingsCloseButton => _settingsPanel?.CloseButton;
+        internal RectTransform SettingsCard => _settingsPanel?.Card;
+        internal string LevelText => _level == null ? null : _level.text;
+        internal RectTransform LevelRect => _level == null ? null : _level.rectTransform;
+        internal Image[] BoosterSlots => _boosters;
         internal RectTransform CounterRect => _pill;
         internal Canvas Canvas => _canvas;
 
