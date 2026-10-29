@@ -103,3 +103,28 @@ No player-visible problems in the game itself (docs only; no screens changed, so
 RESULT: FAIL
 
 Top issues for the author: (1) correct the button display size to 272 x 56 dp and check the 9-slice border against the 168 px height; (2) coin size 36 dp, not 32; (3) fix the Roasted-brown-on-#4E9A5A guidance (4.20:1 fails AA); (4) reconcile Cream and Idli white with the V <= 0.95 rule; (5) trim the masala_dabba and idli_stand prompts to the 3-detail budget.
+
+## Round 2
+
+Reviewed commit 82821ba. Diff scope: `git diff origin/main --name-only` lists only `docs/style-guide.md` and `docs/qa/24/qa-report.md`; no Assets, no images, `art-provenance.csv` untouched. Still no removed v0 lines. `grep` for he/him/his/himself: no matches. All hexes in the doc are in the palette table (script check, empty difference). Palette unchanged, so the round 1 saturation table stands.
+
+| # | Round 1 finding | Round 2 verdict | Evidence |
+| --- | --- | --- | --- |
+| 1 | Button size | Fixed | 816 x 168 px (272 x 56 dp) matches `ResultPanelLayout` (320 - 2 x 24 dp). Source 480 x 336, border 120: 2 x 120 = 240 < 336 and < 480, valid. Displayed at 2x downscale: border 60 px, height 168 px. Only the flat centre stretches (240 source px to 696 px, about 2.9x), consistent with the reworded rule. HUD pill 504 x 240, border 80: 160 < 240 and < 504, valid, shown at 252 x 120 px. |
+| 2 | Coin | Fixed | `UiFeel.CoinDp` 36 dp = 108 px; source 216 is exactly 2x. |
+| 3 | Text on #4E9A5A | Fixed | Computed 4.20 (brown) and 3.45 (white), both listed as large text and icons only; normal text uses white on Leaf dark #2E6F4E (6.00). White on Turmeric (1.82) is banned. |
+| 4 | V rule | Fixed | Explicit exception for Cream (1.00), Lime panel (0.94, within anyway) and Idli white (0.96), all Sat < 0.20, never #FFFFFF. Checked: Sat 0.14, 0.20, 0.07. Note: Lime Sat is 0.20, not under 0.20 (see R2-1), but its V is 0.94 so it needs no exception. |
+| 5 | Detail budget | Fixed | Repeated elements count as one; idli_stand = plates, post, idlis; masala_dabba = tin, bowl ring, spoon. Prompts unchanged and now consistent. |
+| 6 | Names / Sandstone | Fixed | Row reads "White on Leaf dark #2E6F4E", Sandstone 10.7 (computed 10.67). |
+| 7 | 14 shelves | Fixed | Row: 2 columns, 137.8 px, 46 dp (computed 137.8, 3 columns would be 90.8). |
+| 8 | CLAUDE.md pointer | Fixed | `.claude/agents/art-director.md` line 10 describes sprite import: single, 512 px max, compressed for Android, atlas, provenance row. `docs/art-provenance.csv` exists. |
+| 9 | Shelf / panel / near-ties | Fixed | Shelf 902 x 412 (259.1 x 3.48 = 901.7 and 411.9) and 480 x 219 (137.8 x 3.48 = 479.6, x 1.59 = 219.1). Panel 960 x 960, border 144: 320 dp x 3 = 960 px, so shown 1:1 at xxhdpi, 288 < 960. Near-tie list now includes rolling_pin (0.50) and brass_kudam (0.54). |
+
+Round 1 checks re-run: a (scope) pass, c (contrast table, new rows computed) pass, d pass, e (10 ids, rows, prompts, no brand/people/religion, kudam plain) pass, f pass, g pass.
+
+Remaining findings (all LOW, none block):
+- R2-1. Palette note says light neutrals have "Sat under 0.20", but Lime panel #F0DFC0 is exactly 0.20 (rounded; 0.1999 unrounded may be below). No effect since its V is 0.94.
+- R2-2. The 9-slice border sizes assume Image `pixelsPerUnitMultiplier` of 2 (button, pill) and 1 (panel) at xxhdpi. The current placeholder code (`UiParts.cs`) uses 1.5. That is an implementation matter for the later art-import task; the style guide could add one line saying so.
+- R2-3. "Shown 1:1 (48 dp)" for the panel border is true only at 3 px per dp; at xhdpi (2 px per dp) a 144 px border is 72 dp unless scaled. Minor wording.
+
+RESULT: PASS
