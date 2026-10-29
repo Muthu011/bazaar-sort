@@ -60,11 +60,16 @@ namespace Game.Solver
 
         // Snapshot of the board last read: sorted front ids, hidden layers left, lock counter.
         private readonly int[] _front;
+        // The front items _front was last read from, per slot: an unchanged row (most rows of a child board) skips the
+        // type-id lookups. Starts all null, which matches _front's initial empty rows.
+        private readonly string[] _readItems;
         private readonly int[] _hidden;
         private readonly int[] _lock;
 
         private readonly ulong[] _keyScratch;
         private readonly ulong[] _sigScratch;
+        private readonly bool[] _canReceive;
+        private readonly int[] _moveIds;
 
         // Canonical labelling scratch, indexed by type id.
         private readonly ulong[] _colour;
@@ -186,10 +191,13 @@ namespace Game.Solver
 
             int types = _types.Length + 1;
             _front = new int[ShelfCount * Shelf.SlotCount];
+            _readItems = new string[ShelfCount * Shelf.SlotCount];
             _hidden = new int[ShelfCount];
             _lock = new int[ShelfCount];
             _keyScratch = new ulong[ShelfCount];
             _sigScratch = new ulong[ShelfCount];
+            _canReceive = new bool[ShelfCount];
+            _moveIds = new int[ShelfCount * 3];
             _colour = new ulong[types];
             _colourNext = new ulong[types];
             _sortedColours = new ulong[types];
@@ -262,6 +270,22 @@ namespace Game.Solver
             return TypeId(item);
         }
 
+        // Insertion sort: at most 14 values, faster than Array.Sort here.
+        private static void SortKeys(ulong[] keys)
+        {
+            for (int i = 1; i < keys.Length; i++)
+            {
+                ulong value = keys[i];
+                int j = i - 1;
+                while (j >= 0 && keys[j] > value)
+                {
+                    keys[j + 1] = keys[j];
+                    j--;
+                }
+                keys[j + 1] = value;
+            }
+        }
+
         private static void GetSorted(int a, int b, int c, out int x, out int y, out int z)
         {
             if (a > b) { int t = a; a = b; b = t; }
@@ -282,8 +306,15 @@ namespace Game.Solver
             for (int i = 0; i < ShelfCount; i++)
             {
                 var shelf = board.GetShelf(i);
-                GetSorted(FastId(shelf.GetFrontItem(0)), FastId(shelf.GetFrontItem(1)), FastId(shelf.GetFrontItem(2)),
-                    out _front[i * 3], out _front[i * 3 + 1], out _front[i * 3 + 2]);
+                string a = shelf.GetFrontItem(0), b = shelf.GetFrontItem(1), c = shelf.GetFrontItem(2);
+                int o = i * 3;
+                if ((object)a != _readItems[o] || (object)b != _readItems[o + 1] || (object)c != _readItems[o + 2])
+                {
+                    GetSorted(FastId(a), FastId(b), FastId(c), out _front[o], out _front[o + 1], out _front[o + 2]);
+                    _readItems[o] = a;
+                    _readItems[o + 1] = b;
+                    _readItems[o + 2] = c;
+                }
                 int r = shelf.HiddenLayerCount;
                 if (r > _rootHidden[i]) throw new ArgumentException("Board does not descend from the search root.");
                 _hidden[i] = r;
@@ -350,7 +381,7 @@ namespace Game.Solver
                                | (_pinned[i] ? (ulong)(uint)(i + 1) << 40 : 0UL);
                 _keyScratch[i] = Hashing.Step(_hiddenHash[i][_hidden[i]], packed);
             }
-            if (_canonical) Array.Sort(_keyScratch);
+            if (_canonical) SortKeys(_keyScratch);
             return CombineFast(KeySeedA ^ 0x2222UL, KeySeedB ^ 0x2222UL);
         }
 
@@ -409,7 +440,7 @@ namespace Game.Solver
                 if (_lock[i] > 0) h = Hashing.Step(h, LockTag + (ulong)_lock[i]);
                 _keyScratch[i] = h;
             }
-            Array.Sort(_keyScratch);
+            SortKeys(_keyScratch);
             return Combine(KeySeedA ^ 0x1111UL, KeySeedB);
         }
 
@@ -685,7 +716,7 @@ namespace Game.Solver
                 }
                 _keyScratch[i] = h;
             }
-            if (sortShelves) Array.Sort(_keyScratch);
+            if (sortShelves) SortKeys(_keyScratch);
             return CombineFast(KeySeedA, KeySeedB);
         }
 
@@ -793,24 +824,51 @@ namespace Game.Solver
         // Moves
 
         /// <summary>
-        /// Legal moves from <paramref name="board"/>, checked with <see cref="Board.CanMove"/>. Items of the same type in
-        /// one front row give one move each (they are interchangeable). With <paramref name="mergeEquivalentShelves"/>,
-        /// shelves with identical signatures are also merged as sources and as targets, because they lead to the same
-        /// canonical state; the shortest-path and dead-end searches use that, the simulated player does not.
+        /// Legal moves from <paramref name="board"/>: <see cref="Board.CanPick"/> for each item, then
+        /// <see cref="Board.CanReceive"/> for each other shelf (together exactly <see cref="Board.CanMove"/>). Items of
+        /// the same type in one front row give one move each (they are interchangeable). With
+        /// <paramref name="mergeEquivalentShelves"/>, shelves with identical signatures are also merged as sources and
+        /// as targets, because they lead to the same canonical state; the shortest-path and dead-end searches use that,
+        /// the simulated player does not.
         /// </summary>
         public void GenerateMoves(Board board, List<SolverMove> into, bool mergeEquivalentShelves)
         {
+            Generate(board, into, mergeEquivalentShelves, null);
+        }
+
+        /// <summary>
+        /// The simulated player's moves: <see cref="GenerateMoves"/> without merging (same moves, same order), plus the
+        /// indices (ascending) of the moves for which <see cref="MayClear"/> holds.
+        /// </summary>
+        public void GeneratePlayMoves(Board board, List<SolverMove> into, List<int> mayClear)
+        {
+            Generate(board, into, false, mayClear);
+        }
+
+        private void Generate(Board board, List<SolverMove> into, bool merge, List<int> mayClear)
+        {
             into.Clear();
-            if (mergeEquivalentShelves)
+            mayClear?.Clear();
+            if (board.ShelfCount != ShelfCount) throw new ArgumentException("Board does not match the search root.");
+            if (merge)
             {
                 for (int i = 0; i < ShelfCount; i++) _sigScratch[i] = ShelfSignature(board, i);
+            }
+            for (int i = 0; i < ShelfCount; i++)
+            {
+                _canReceive[i] = board.CanReceive(i);
+                if (mayClear == null) continue;
+                var shelf = board.GetShelf(i);
+                for (int s = 0; s < Shelf.SlotCount; s++) _moveIds[i * 3 + s] = FastId(shelf.GetFrontItem(s));
             }
 
             for (int from = 0; from < ShelfCount; from++)
             {
                 var shelf = board.GetShelf(from);
                 if (shelf.IsFrontEmpty) continue;
-                if (mergeEquivalentShelves && HasEarlierTwin(from, from, -1)) continue;
+                if (merge && HasEarlierTwin(from, from, -1)) continue;
+                // MayClear, first half: the source row empties and reveals a layer.
+                bool reveals = mayClear != null && shelf.FrontItemCount == 1 && shelf.HiddenLayerCount > 0;
 
                 for (int slot = 0; slot < Shelf.SlotCount; slot++)
                 {
@@ -822,12 +880,19 @@ namespace Game.Solver
                         if (string.Equals(shelf.GetFrontItem(s), item, StringComparison.Ordinal)) repeat = true;
                     }
                     if (repeat) continue;
+                    int id = mayClear != null ? _moveIds[from * 3 + slot] : 0;
 
                     for (int to = 0; to < ShelfCount; to++)
                     {
-                        if (to == from) continue;
-                        if (board.CanMove(from, slot, to) != MoveResult.Ok) continue;
-                        if (mergeEquivalentShelves && HasEarlierTwin(to, to, from)) continue;
+                        if (to == from || !_canReceive[to]) continue;
+                        if (merge && HasEarlierTwin(to, to, from)) continue;
+                        if (mayClear != null)
+                        {
+                            // MayClear, second half: the target row holds two of the moved type.
+                            int same = (_moveIds[to * 3] == id ? 1 : 0) + (_moveIds[to * 3 + 1] == id ? 1 : 0)
+                                       + (_moveIds[to * 3 + 2] == id ? 1 : 0);
+                            if (reveals || same == GameRules.MatchCount - 1) mayClear.Add(into.Count);
+                        }
                         into.Add(new SolverMove(from, slot, to));
                     }
                 }

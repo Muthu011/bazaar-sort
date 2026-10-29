@@ -4,6 +4,24 @@ using Game.Core;
 
 namespace Game.Solver
 {
+    /// <summary>
+    /// A winning line from the root, published by the shortest-solution search (on another thread) when it finds one.
+    /// </summary>
+    internal sealed class WinningLine
+    {
+        private volatile IReadOnlyList<SolverMove> _moves;
+
+        public WinningLine(IReadOnlyList<SolverMove> moves = null)
+        {
+            _moves = moves;
+        }
+
+        /// <summary>The line, or null while none is known.</summary>
+        public IReadOnlyList<SolverMove> Moves => _moves;
+
+        public void Publish(IReadOnlyList<SolverMove> moves) => _moves = moves;
+    }
+
     /// <summary>Outcome of <see cref="PlaySimulator.Run"/>.</summary>
     public sealed class PlayStats
     {
@@ -98,20 +116,20 @@ namespace Game.Solver
         {
             if (root == null) throw new ArgumentNullException(nameof(root));
             options = options ?? SolverOptions.Default;
-            return Run(new SearchContext(root, pinnedShelves), options, null, SearchBudget.For(options));
+            return Run(new SearchContext(root, pinnedShelves), options, new WinningLine(), SearchBudget.For(options));
         }
 
         /// <summary>
         /// Runs the plays on <see cref="SolverOptions.Threads"/> threads. Each thread has its own search context and
         /// dead-end oracle; the plays are independent (own seed each) and every alive/dead answer is a fact about the
-        /// board, so the merged numbers are the same for any thread count. <paramref name="winningLine"/> (optional)
-        /// is a known winning line from the root: its states are alive.
+        /// board, so the merged numbers are the same for any thread count. <paramref name="winningLine"/> may be
+        /// published while the plays run (the shortest solution is searched for at the same time); once it is, each
+        /// thread marks its states alive before its next play. That only saves dead-end searches, it changes no answer.
         /// </summary>
-        internal static PlayStats Run(SearchContext context, SolverOptions options,
-            IReadOnlyList<SolverMove> winningLine, SearchBudget budget)
+        internal static PlayStats Run(SearchContext context, SolverOptions options, WinningLine winningLine,
+            SearchBudget budget)
         {
-            int threads = options.Threads > 0 ? options.Threads : Math.Min(Environment.ProcessorCount, 4);
-            threads = Math.Max(1, Math.Min(threads, options.Plays));
+            int threads = ThreadCount(options);
 
             var workers = new Worker[threads];
             for (int w = 0; w < threads; w++)
@@ -191,6 +209,16 @@ namespace Game.Solver
                 budget.Reason);
         }
 
+        /// <summary>Threads for the plays: <see cref="SolverOptions.Threads"/>, or for 0 one per processor up to
+        /// <see cref="MaxAutoThreads"/>.</summary>
+        internal static int ThreadCount(SolverOptions options)
+        {
+            int threads = options.Threads > 0 ? options.Threads : Math.Min(Environment.ProcessorCount, MaxAutoThreads);
+            return Math.Max(1, Math.Min(threads, options.Plays));
+        }
+
+        internal const int MaxAutoThreads = 4;
+
         /// <summary>One thread's share of the plays: its own context, oracle, scratch board and results.</summary>
         private sealed class Worker
         {
@@ -200,6 +228,10 @@ namespace Game.Solver
             private readonly LivenessOracle _oracle;
             private readonly List<SolverMove> _moves = new List<SolverMove>();
             private readonly List<SolverMove> _clearing = new List<SolverMove>();
+            private readonly List<int> _mayClear = new List<int>();
+            // Boards of the current play, by position in it (the root is not one of them): reused by every play, so a
+            // play builds no boards of its own. Nothing keeps a board of a play after the play ends.
+            private readonly Board[] _pool;
             private readonly HashSet<StateKey> _seen = new HashSet<StateKey>();
             private readonly List<Board> _pathBoards = new List<Board>();
             private readonly List<StateKey> _pathKeys = new List<StateKey>();
@@ -207,24 +239,38 @@ namespace Game.Solver
             // player makes is kept as a board of its own.
             private readonly Board _scratch;
 
-            public Worker(SearchContext context, SolverOptions options, IReadOnlyList<SolverMove> winningLine,
-                SearchBudget budget)
+            private readonly WinningLine _winningLine;
+            private bool _lineMarked;
+
+            public Worker(SearchContext context, SolverOptions options, WinningLine winningLine, SearchBudget budget)
             {
+                _winningLine = winningLine;
                 _context = context;
                 _options = options;
                 _budget = budget;
                 _oracle = new LivenessOracle(context, options.LivenessNodeBudget, budget);
                 _scratch = context.Root.Clone();
-                if (winningLine != null)
+                _pool = new Board[options.MaxPlayMoves + 2];
+            }
+
+            // Every state on the winning line is alive (once the line is known).
+            private void MarkWinningLine()
+            {
+                var line = _winningLine?.Moves;
+                if (_lineMarked || line == null) return;
+                _lineMarked = true;
+                var replay = _context.Root;
+                _oracle.MarkAlive(replay);
+                foreach (var move in line)
                 {
-                    var replay = context.Root;
+                    replay = SearchContext.Apply(replay, move);
                     _oracle.MarkAlive(replay);
-                    foreach (var move in winningLine)
-                    {
-                        replay = SearchContext.Apply(replay, move);
-                        _oracle.MarkAlive(replay);
-                    }
                 }
+            }
+
+            private Board PoolBoard(int position)
+            {
+                return _pool[position] ?? (_pool[position] = _context.Root.Clone());
             }
 
             /// <summary>1 = alive, 0 = dead, -1 = unknown, by <see cref="SearchContext.PlayKey"/>.</summary>
@@ -247,6 +293,7 @@ namespace Game.Solver
                 var pathKeys = _pathKeys;
                 var scratch = _scratch;
 
+                MarkWinningLine();
                 var rng = new SplitMix64(Hashing.Mix(_options.Seed) ^ Hashing.Mix((ulong)p + 1));
                 seen.Clear();
                 pathBoards.Clear();
@@ -273,7 +320,7 @@ namespace Game.Solver
                         break;
                     }
 
-                    context.GenerateMoves(board, moves, false);
+                    context.GeneratePlayMoves(board, moves, _mayClear);
                     if (moves.Count == 0)
                     {
                         outcome = Outcome.Stuck;
@@ -281,9 +328,9 @@ namespace Game.Solver
                     }
 
                     clearing.Clear();
-                    for (int m = 0; m < moves.Count; m++)
+                    for (int c = 0; c < _mayClear.Count; c++)
                     {
-                        if (!SearchContext.MayClear(board, moves[m])) continue;
+                        int m = _mayClear[c];
                         budget.Charge();
                         TryOn(scratch, board, moves[m]);
                         if (scratch.ItemCount < board.ItemCount) clearing.Add(moves[m]);
@@ -293,7 +340,8 @@ namespace Game.Solver
                     StateKey nextKey = default;
                     if (clearing.Count > 0)
                     {
-                        next = SearchContext.Apply(board, clearing[rng.NextInt(clearing.Count)]);
+                        next = PoolBoard(pathBoards.Count);
+                        TryOn(next, board, clearing[rng.NextInt(clearing.Count)]);
                         nextKey = next.IsWon ? default : context.PlayKey(next);
                     }
                     else
@@ -312,7 +360,8 @@ namespace Game.Solver
                             TryOn(scratch, board, move);
                             var childKey = context.PlayKey(scratch);
                             if (seen.Contains(childKey)) continue;
-                            next = scratch.Clone();
+                            next = PoolBoard(pathBoards.Count);
+                            next.CopyStateFrom(scratch);
                             nextKey = childKey;
                             break;
                         }

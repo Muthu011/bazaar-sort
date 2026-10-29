@@ -167,17 +167,54 @@ namespace Game.Solver
             return analysis;
         }
 
+        private static IReadOnlyList<SolverMove> SolutionOf(SolveResult result)
+        {
+            return result != null && result.Solvability == Solvability.Solvable ? result.Solution : null;
+        }
+
         private static void Run(LevelAnalysis analysis, Board board, IReadOnlyList<bool> pinned, SolverOptions options)
         {
             var budget = SearchBudget.For(options);
             var context = new SearchContext(board, pinned, !options.ReferenceMode);
-            analysis.Shortest = ShortestSolver.Solve(context, options, budget);
 
-            if (!budget.Exhausted)
+            if (PlaySimulator.ThreadCount(options) == 1)
             {
-                // Every state on a winning line is alive.
-                var line = analysis.Shortest.Solvability == Solvability.Solvable ? analysis.Shortest.Solution : null;
-                analysis.Plays = PlaySimulator.Run(context, options, line, budget);
+                // One thread: shortest solution first, then the plays, which start knowing the winning line.
+                analysis.Shortest = ShortestSolver.Solve(context, options, budget);
+                if (!budget.Exhausted)
+                {
+                    analysis.Plays = PlaySimulator.Run(context, options, new WinningLine(SolutionOf(analysis.Shortest)),
+                        budget);
+                }
+            }
+            else
+            {
+                // The shortest-solution search runs on its own thread while the plays run on theirs; it publishes
+                // its winning line when found, which only spares the plays some dead-end searches. Neither result
+                // depends on the other, so the numbers are the same as one thread's.
+                var line = new WinningLine();
+                var playContext = context.CreateSibling();
+                SolveResult shortest = null;
+                Exception failure = null;
+                var search = new System.Threading.Thread(() =>
+                {
+                    try
+                    {
+                        shortest = ShortestSolver.Solve(context, options, budget);
+                        line.Publish(SolutionOf(shortest));
+                    }
+                    catch (Exception e)
+                    {
+                        failure = e;
+                        budget.Stop("the shortest-solution search failed: " + e.Message);
+                    }
+                }, 16 * 1024 * 1024) { IsBackground = true, Name = "Bazaar Sort solver shortest" };
+                search.Start();
+                var plays = PlaySimulator.Run(playContext, options, line, budget);
+                search.Join();
+                if (failure != null) throw new InvalidOperationException("Shortest-solution search failed.", failure);
+                analysis.Shortest = shortest;
+                analysis.Plays = plays;
             }
 
             analysis.BudgetNodesUsed = budget.Used;
