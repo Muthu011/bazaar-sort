@@ -53,6 +53,8 @@ Level files may only use these ids (snake_case, case-sensitive). The code copy i
 - "No booster can help" is asked through `IBoosterRescue` on the board. Until boosters ship (#42) nothing can help, so every Stuck is a fail. With a booster that could help, the board is stuck but not failed, and the fail screen waits.
 - Fail screen: "Out of space!" with Retry. Retry restarts the same level from its start state.
 - A rewarded-ad Continue button sits on the fail screen from Slice 6. Until then it exists but is hidden and does nothing.
+- The Continue button is the main button: above Retry, larger, labelled "Free Extra Slot" with a small video icon, because what the player gets is an extra slot. When it shows, Retry becomes the smaller secondary button. While it is hidden, Retry alone is the main button (Muthu, PR #51).
+- The final wording of the Continue button is checked in Slice 6, when the rewarded ad is wired.
 - No interstitial and no penalty after a fail: no ad, no lost coins, stars or unlocks, nothing saved. The player just tries again.
 
 ### Board size and touch areas (decided by Muthu, Oct 2026)
