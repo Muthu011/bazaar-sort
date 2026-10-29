@@ -4,11 +4,11 @@ The bullets below are the base rules. The sections after them add the World 1 lo
 
 - Look: warm premium 2.5D. Slightly isometric objects, soft top-left light, real materials (brass shine, stainless steel, terracotta, banana-leaf green, glass). Not cartoon clip art.
 - Palette: turmeric yellow, kumkum red, peacock blue, banana-leaf green, brass gold on warm cream. One accent colour per world.
-- Objects: 512 px source, transparent background, centred, same camera angle and light for every object. Each object must read in greyscale at 64 px with a unique silhouette.
+- Objects: 512 px master kept in the art source folder, imported into the game with Max Size 256; transparent background, centred, same camera angle and light for every object. Each object must read in greyscale at 64 px with a unique silhouette.
 - Scenes: shelves belong to the setting (World 1: a limewashed plank shelf in the kitchen; later worlds: chai kadai counter, bangle wall); backdrop softly blurred.
 - Effects on clear: themed and short (coffee steam, jasmine petals, diya sparkle), under 0.6 s.
 - UI: rounded cards, 48 px+ tap targets, icons and numbers over words.
-- Board touch areas: the 4–14 shelf layout is fixed. Item touch areas extend past the picture into the gaps between items and shelves to reach 48 dp where there's room. 44 dp is the floor on 720p phones. Levels 1 to 20 use at most 8 shelves.
+- Board touch areas: the 4–12 shelf layout is fixed (12 shelves is the cap for the whole game). Item touch areas extend past the picture into the gaps between items and shelves to reach 48 dp where there's room. 44 dp is the floor on 720p phones. Levels 1 to 20 use at most 8 shelves.
 - Audio: veena, flute, tabla and mridangam loops, calm; real object sounds (tumbler clink, cooker whistle).
 - Respect: no deity images as pieces; pooja items never discarded, crushed or near footwear or waste.
 
@@ -99,20 +99,22 @@ Colour-blind note:
 ### Reference resolution and how sizes are derived
 - Design resolution is 1080 x 2400, portrait, about 3 px per dp (xxhdpi, 480 dpi; 1 dp = dpi / 160 px as in `Assets/Scripts/View/ScreenDensity.cs`). 720 x 1600 (xhdpi, 2 px per dp) is the small-phone check.
 - The UI is built with `CanvasScaler` in ConstantPixelSize mode (`Assets/Scripts/UI/GameHud.cs`, `ResultPanels.cs`), so UI sizes are dp times density. World units are screen pixels / 100 (`BoardView.PixelsPerUnit`). So the art is placed in screen pixels and must be sized for those.
-- Board layout (`Assets/Scripts/View/BoardLayout.cs`, `BoardLayoutSettings.Default`): the item picture is one "tile". Shelf width is 3 slots + 4 x 0.12 padding = 3.48 tiles. Shelf height is 1 + 0.35 hidden strip + 2 x 0.12 = 1.59 tiles. Column gap 0.25 tile, row gap 0.35 tile, 2 or 3 columns (issue #40: shelves fill the width on portrait phones), 4% side margin, 10% top and 10% bottom reserve of the safe area (the top bar: level number, dev Levels button; the bottom bar: booster slots, coins, settings). Every shelf holds exactly 3 slots (`docs/level-schema.md`).
-- Tile size from that layout on 1080 x 2400 (computed by the same formula as `BoardLayout.Compute`):
+- Board layout (`Assets/Scripts/View/BoardLayout.cs`, `BoardLayoutSettings.Default`): the item picture is one "tile". Shelf width is 3 slots + 4 x 0.12 padding = 3.48 tiles. Shelf height is 1 + 0.35 hidden strip + 2 x 0.12 = 1.59 tiles. Column gap 0.25 tile, row gap 0.35 tile, 1, 2 or 3 columns, whichever gives the biggest items, so small boards stay one column (Muthu, 2026-10-29, issue #40), 4% side margin, 10% top and 10% bottom reserve of the safe area (the top bar: level number, dev Levels button; the bottom bar: booster slots, coins, settings). Every shelf holds exactly 3 slots (`docs/level-schema.md`).
+- Tile size from that layout on the three Game view sizes (computed by `BoardLayout.Compute`; Edit Mode `PortraitLayoutTests` prints the full table). Levels have 4 to 12 shelves:
 
-| Screen (safe area) | Shelves | Columns | Tile (px) | Tile (dp) | Smallest touch (dp) |
-| --- | --- | --- | --- | --- | --- |
-| 1080 x 2400, full | 4 to 14 | 2 | 137.8 | 46 | 51.4 |
-| 1080 x 2400, 110 px cutout + 63 px gesture bar | 4 to 12 | 2 | 137.8 | 46 | 51.4 |
-| same | 13 to 14 | 2 | 134.7 | 45 | 50.3 |
-| 1080 x 1920 | 4 to 10 | 2 | 137.8 | 46 | 51.4 |
-| 1080 x 1920 | 13 to 14 | 2 | 116.1 | 39 | 48.0 |
-| 720 x 1600 (2 px/dp), 74 px cutout + 42 px gesture bar | 4 to 12 | 2 | 91.9 | 46 | 51.4 |
+| Screen (safe area) | 4 shelves | 5 | 6 | 7 | 8 to 10 | 11 to 12 |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1080 x 2400, full | 1 col, 259.1 px (86.4 dp) | 1, 205.3 (68.4) | 1, 170.1 (56.7) | 1, 145.1 (48.4) | 2, 137.8 (45.9) | 2, 137.8 (45.9) |
+| 1080 x 2400, 110 px cutout + 63 px gesture bar | 1, 240.4 (80.1) | 1, 190.5 (63.5) | 1, 157.8 (52.6) | 2, 137.8 (45.9) | 2, 137.8 (45.9) | 2, 137.8 (45.9) |
+| 1080 x 1920, full | 1, 207.3 (69.1) | 1, 164.3 (54.8) | 2, 137.8 (45.9) | 2, 137.8 (45.9) | 2, 137.8 (45.9) | 2, 136.0 (45.3) |
+| 1080 x 1920, 24 dp cutout + 21 dp gesture bar (strictest) | 1, 192.7 (64.2) | 1, 152.7 (50.9) | 2, 137.8 (45.9) | 2, 137.8 (45.9) | 2, 137.8 (45.9) | 2, 126.5 (42.2) |
+| 720 x 1600 (2 px/dp), full | 1, 172.7 (86.4) | 1, 136.9 (68.4) | 1, 113.4 (56.7) | 1, 96.7 (48.4) | 2, 91.9 (45.9) | 2, 91.9 (45.9) |
+| 720 x 1600, 74 px cutout + 42 px gesture bar | 1, 160.2 (80.1) | 1, 127.0 (63.5) | 1, 105.2 (52.6) | 2, 91.9 (45.9) | 2, 91.9 (45.9) | 2, 91.9 (45.9) |
 
-- So an object is shown at about 138 px (46 dp) on a 1080 px wide phone for every board of levels 1 to 20 (up to 8 shelves), and down to 116 px (39 dp) for 13 to 14 shelves on 16:9. Until issue #40 a 4-shelf board used one column with 259 px (86 dp) tiles. The 48 dp touch rule (`BoardLayout.TargetTouchDp`, floor `FloorTouchDp` 44) is met by the touch area growing into the gaps, but the picture itself is about 46 dp for levels 1 to 20 and 39 dp at its smallest (13 to 14 shelves on 16:9). This is why the readability test below uses 48 dp.
-- Source size is 2x the largest display size where practical, so the game downscales and mipmaps; it never upscales art. The only stretching is the flat centre of a 9-slice panel, which carries no detail. Object source: 512 px (written for the old 259 px maximum; since issue #40 the largest display is 138 px, so 512 px is about 3.7x; whether to keep 512 is an open question for Muthu). Game import: 512 px max, compressed for Android (import settings are described in `.claude/agents/art-director.md`; provenance goes in `docs/art-provenance.csv`).
+Item touch areas are at least 51.4 dp up to 10 shelves on every row above and at least 48.0 dp at 11 to 12 shelves (the strictest 16:9 case); the floor is 44 dp.
+
+- So an object is shown between about 126 px (42 dp, 11 to 12 shelves on 16:9 with a cutout and gesture bar) and 259 px (86 dp, 4 shelves in one column on 1080 x 2400); for levels 1 to 20 (up to 8 shelves) it is at least 138 px (46 dp) on a 1080 px wide phone. The 48 dp touch rule (`BoardLayout.TargetTouchDp`, floor `FloorTouchDp` 44) is met by the touch area growing into the gaps, but the picture itself can be under 48 dp. This is why the readability test below uses 48 dp.
+- Source size is 2x the largest display size where practical, so the game downscales and mipmaps; it never upscales art. The only stretching is the flat centre of a 9-slice panel, which carries no detail. Objects: a 512 px master is kept in the art source folder (outside the game build), and the game imports it with Max Size 256, which covers the largest on-screen size on a 1080p phone (Muthu, 2026-10-29). Note: a 4-shelf board in one column on 1080 x 2400 shows the tile at about 259 px, so the 256 px import is about 1% under the very largest display there (a 1.01x upscale, not visible). Compressed for Android (import settings are described in `.claude/agents/art-director.md`; provenance goes in `docs/art-provenance.csv`).
 - Other sizes come from UI constants: button height 56 dp (`ResultPanelLayout.ButtonHeightDp`), card max width 320 dp (`MaxCardWidthDp`), star 52 dp (`StarDp`), HUD counter 84 x 40 dp (`HudLayout.CounterWidthDp/CounterHeightDp`), padlock width 0.55 tile with aspect 70/64 (`BoardView.PadlockWidthTiles`, `PlaceholderSprites.PadlockAspect`).
 
 ### Asset list (World 1)
@@ -120,7 +122,7 @@ All PNG, RGBA, transparent background unless marked, sRGB. "Display" is at 1080 
 
 | Asset | Source size (px) | Display size | Notes |
 | --- | --- | --- | --- |
-| `tumbler` | 512 x 512 | 116 to 138 px (39 to 46 dp) | Object rule: within a 464 x 464 safe box, centred, base on the bottom 24 px |
+| `tumbler` | 512 x 512 master, imported at 256 | 126 to 259 px (42 to 86 dp) | Object rule: within a 464 x 464 safe box, centred, base on the bottom 24 px |
 | `pressure_cooker` | 512 x 512 | same | same |
 | `idli_stand` | 512 x 512 | same | same |
 | `tawa` | 512 x 512 | same | same |
@@ -130,12 +132,12 @@ All PNG, RGBA, transparent background unless marked, sRGB. "Display" is at 1080 
 | `brass_kudam` | 512 x 512 | same | same |
 | `rolling_pin` | 512 x 512 | same | same |
 | `chai_kettle` | 512 x 512 | same | same |
-| Shelf (one, all 3-slot shelves) | 1808 x 826 | 480 x 219 px (2 per row, 1080 px wide screen); 404 x 185 px at 13 to 14 shelves on 1080 x 1920 | Aspect 3.48 : 1.59. Plank plus back panel, hidden-layer strip across the top 22% (0.35 / 1.59). Locked state is drawn in code. |
+| Shelf (one, all 3-slot shelves) | 1808 x 826 | 902 x 412 px at 4 shelves (one column, 1080 x 2400), 480 x 219 px at 2 per row, 440 x 201 px at 12 shelves on 16:9 with a cutout | Aspect 3.48 : 1.59. Plank plus back panel, hidden-layer strip across the top 22% (0.35 / 1.59). Locked state is drawn in code. |
 | Background | 1200 x 2800 | scaled to cover the screen | Opaque. Keep key detail inside the centre 1200 x 2133 so 9:16 phones crop safely. Soft blur, low contrast, nothing busy behind the board (the board sits between 10% and 90% of the height). |
 | Button (primary and secondary share one 9-slice, tinted) | 480 x 336 | 816 x 168 px (272 x 56 dp: card 320 dp minus 2 x 24 dp padding, `ResultPanelLayout`) | 9-slice, border 120 on all sides (shown as 60 px, so source is 2x). Check: 2 x 120 = 240 is less than the 336 height and 480 width. Neutral light base so it can be tinted Turmeric or Peacock blue |
 | Panel / card | 960 x 960 | up to 960 px wide (320 dp) | 9-slice, border 144 (shown 1:1, 48 dp). Check: 2 x 144 = 288 is less than 960. Card cream with a thin Plank mid edge and soft shadow |
 | HUD pill (counter) | 504 x 240 | 252 x 120 px (84 x 40 dp) | 9-slice, border 80 (shown as 40 px, so source is 2x). Check: 2 x 80 = 160 is less than the 240 height and 504 width |
-| Padlock | 256 x 280 | up to 76 x 83 px (0.55 tile at 138 px) | Brass, plain, no keyhole text; aspect 64 : 70 |
+| Padlock | 256 x 280 | up to 142 x 156 px (0.55 tile at 259 px) | Brass, plain, no keyhole text; aspect 64 : 70 |
 | Coin | 216 x 216 | 108 px (36 dp, `UiFeel.CoinDp`) | Brass disc with a plain embossed ring and a simple rupee-free centre (no symbols, no text) |
 | Star | 256 x 256 | 156 px (52 dp) | Filled Turmeric star with warm highlight. An empty version in Sandstone with a Plank mid edge, same size |
 | Icons (pause, sound, retry) | 128 x 128 each | 72 px (24 dp) | Roasted brown, simple, not in this issue's scope; listed for later |
@@ -143,7 +145,7 @@ All PNG, RGBA, transparent background unless marked, sRGB. "Display" is at 1080 
 #### Packing and compression (defaults for the import task, to be confirmed there)
 - Objects, shelf, padlock, coin and star are packed in a Unity Sprite Atlas (`com.unity.2d.sprite`, built in), one atlas per world for the objects and one for shared UI. Background and 9-slice panels stay as separate textures.
 - Android compression is ASTC. Default block size 6x6 for objects (soft shaded art hides the blocks) and 4x4 for UI (button, pill, panel edges, padlock, coin, star), where sharp edges matter more than size.
-- Atlas max size 2048 x 2048, padding 4 px, no rotation, mipmaps on for objects, off for UI. Ten 512 px objects fit in one 2048 x 2048 page with room to spare; the 1808 x 826 shelf goes in the UI atlas or its own page.
+- Atlas max size 2048 x 2048, padding 4 px, no rotation, mipmaps on for objects, off for UI. Ten objects imported at 256 px fit in one 1024 x 1024 page (or a 2048 x 2048 page with room to spare); the 1808 x 826 shelf goes in the UI atlas or its own page.
 - These are defaults, not decisions. The import task checks the result on a device and may change block size or atlas size, and records the build size change.
 
 ### Readability rules
