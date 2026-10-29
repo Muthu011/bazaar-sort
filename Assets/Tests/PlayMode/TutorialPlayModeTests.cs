@@ -229,6 +229,32 @@ namespace Game.Tests.PlayMode
             Assert.AreEqual(TutorialDirector.LockedLine(1), _tutorial.CueText);
             Assert.IsFalse(_tutorial.IsHandVisible);
             Assert.IsFalse(_tutorial.IsArrowVisible);
+
+            // The line covers no item and not the padlock (QA round 1).
+            var pill = _tutorial.PillPixelRect;
+            Assert.Greater(pill.height, _view.Layout.TileSize * 0.25f, "The pill is tall enough to read.");
+            for (int shelf = 0; shelf < Board.ShelfCount; shelf++)
+            {
+                for (int slot = 0; slot < Shelf.SlotCount; slot++)
+                {
+                    Assert.IsFalse(pill.Overlaps(_view.Layout.GetFrontSlotRect(shelf, slot)), $"Pill covers item ({shelf},{slot}).");
+                }
+            }
+            float padlockLeft = _view.GetPadlockPixelPosition(5).x - 0.5f * _view.Layout.TileSize * BoardView.PadlockWidthTiles;
+            Assert.LessOrEqual(pill.xMax, padlockLeft, "Pill stays left of the padlock.");
+            Assert.GreaterOrEqual(pill.yMin, _view.Layout.GetFrontSlotRect(5, 0).yMax, "Pill sits above the locked shelf's items.");
+        }
+
+        [UnityTest]
+        public IEnumerator L1_HandFingertipLeavesTheItemReadable()
+        {
+            Build(1);
+            yield return null;
+            yield return null;
+            _tutorial.Advance(0.4f); // hand on the item
+            Assert.IsTrue(_tutorial.IsHandVisible);
+            var tile = _view.Layout.GetFrontSlotRect(1, 1);
+            Assert.Less(_tutorial.HandTipPixelPosition.y, tile.center.y, "Fingertip below the tile centre.");
         }
     }
 }
