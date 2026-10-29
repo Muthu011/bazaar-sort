@@ -1,47 +1,60 @@
-# QA report: issue #44 "Real star rule and coin wallet"
+# QA report: issue #44 "Real star rule and coin wallet" (round 2, PR #63)
 
-Branch `task/44-stars-coin-wallet` (5 commits on origin/main, not pushed). Verified 2026-10-29 in the Unity editor through Unity MCP.
+Branch `task/44-stars-coin-wallet` at e0d6f57 (5 local commits 6762a5e..e0d6f57 over the pushed branch, not pushed). Verified 2026-10-29 in the Unity editor through Unity MCP. This replaces the round-1 report (pay-every-replay rule, "9999+"), which is superseded.
 
 ## 1. Tests
-- Edit Mode: 779 / 779 passed, 0 failed, 0 skipped (50.6 s).
-- Play Mode: 82 / 82 passed, 0 failed, 0 skipped (39.9 s). Includes the existing frame-time tests (`TutorialGameScenePlayModeTests`, budget `FrameBudgetMs = 16.6`, asserts mean PlayerLoop under budget; `Feel_FrameTimeAndGc_AreMeasured_OnABusyChain`).
-- Both match the author's numbers.
+- Edit Mode: 852 / 852 passed, 0 failed, 0 skipped (39.5 s).
+- Play Mode: 87 / 87 passed, 0 failed, 0 skipped (45.8 s). Matches the author's numbers.
+- Known, non-blocking: the Play Mode assembly does not compile at intermediate commit db399c2 (ClearCounter API changed before its callers). Only the tip compiles, so the branch is not bisectable across that commit. Not re-checked by checkout (would disturb the editor); taken from the author's report.
 
 ## 2. Console
-After a forced refresh + compile and again after both test runs and the Play Mode session: 0 project errors, 0 project warnings. One transient `MCP-FOR-UNITY [WebSocket] Unexpected receive error` warning appeared during the domain reload; it is the Unity MCP bridge, not project code, and did not recur.
+After a forced refresh + compile, and again after both test runs: 0 project errors, 0 project warnings. One `MCP-FOR-UNITY [WebSocket] ... not initialised` warning was seen right after the domain reload; it is the MCP bridge, not project code, and was gone on the second read.
 
 ## 3. Levels
-No level changed: `git diff origin/main -- Assets/Levels` is empty and the working tree was clean before QA. Solver check = confirmed level JSON untouched. (`LevelParser` now reads `solver.minMoves`, covered by `LevelParserTests`.)
+`git diff origin/main HEAD -- Assets/Levels` is empty. No level changed, so the solver/uniqueness/band check does not apply.
 
-## 4. Screenshots (Play Mode, Game scene, Level 5)
-- `docs/qa/44/win_card_2_of_3_stars.png`: Win card, 2 stars lit marigold, 3rd dim pale clay (#D7CCC8). Staged: `LevelBootstrap._lastWinStars` set to 2 by reflection and `ResultPanels.Show(Win)` called (the level was not played to a win). The real path (moves -> StarsFor -> LastWinStars) is covered by PlayMode tests.
-- `docs/qa/44/hud_coin_pill_wallet_135.png`: HUD coin pill shows `135` after `GameServices.Progress.RecordWin(..., 135)`; it updated live. The dev save was reset to 0 afterwards.
-- Captures are only 320x640 (editor Game view size). Legible, but not device-resolution.
+## 4. Rulings 1-8
+1. First win 10 / 15 / 20: MET. `WinRewards.CoinsForWin(stars, previousBest, config)`; first-win cases in `WinRewardsTests`; `Win_InTheMinimum_Earns3Stars_And20Coins_SavedAndOnTheWinCard` (Play Mode, live scene) passes.
+2. Replays: MET. `Replay_PaysFivePerStarAboveThePreviousBest` covers same (1/2/3 -> 0), fewer (3->1, 3->2, 2->1 -> 0), more (1->2 +5, 2->3 +5, 1->3 +10); `OneStarFirstWin_ThenThreeStarReplay_TotalsTheSameAsAThreeStarFirstWin` (20 cap); Progress rules tests and Play Mode `WinCard_ReplayWithNoNewStar_HasNoCoinLine_AndThePillStays` pass. Amounts come from `RewardConfig.Default` (10/5), not literals; custom-config test exists. No remote config in the project yet (honest, documented).
+3. Undone moves count: MET. `MoveCounter` exposes only Count and Reset; `HasNoDecrement_OnlyCountAndReset` fails if one is added. Undo itself is not built (#53), so this is verified at the API level only.
+4. Per-clear coin flight removed: MET. Play Mode asserts `CoinsInFlight == 0` after a clear and the wallet unchanged.
+5. Win card "+N" line: MET. `WinCard_ShowsPlusN_AndItsCoinsFlyIntoThePill_WhichCountsUpWithoutAJump` (Play Mode) passes; `WinCoinsTextTests` cover key `win.coins_earned`, "+{0}", and hidden at 0 and negative; `WinCard_LeftMidFlight_ShowsTheWholeBalanceAtOnce` passes. Screenshot `win_card_plus20_coins.png` shows "+20" with a coin under the stars, above Next/Retry, no overlap.
+6. Pill auto-widens to 5 digits, min 84 dp, text never shrinks: MET. `CoinBalanceTextTests` PillWidth cases (84 up to 3 digits, 92 at 4, 103.5 at 5, overflow inside max). Play Mode `Pill_WidensForFiveDigits_AndNeverShrinksTheText` asserts `label.fontSize == HudLayout.CounterFontDp` at 5 digits. Screenshot `hud_coin_pill_5_digits.png` shows "99999" fitting with margin. Overflow above 99,999 shows "99K+" (`hud_coin_pill_overflow.png`, fits). This replaces the old "9999+" text, per ruling.
+7. #D7CCC8 placeholder: MET as a doc item. `docs/game-design.md` says it stays a placeholder until the Slice 4 art pass. No code change expected.
+8. Rules in docs/game-design.md: MET. The "Stars and coins" section now states first win, replay, undone moves, config, no per-clear flight, pill width and "99K+", the "+N" line and the count-up. It matches the code I read.
 
-## 5. Acceptance criteria
-1. Star rule: MET. `Core/WinRewards.StarsFor` uses exact integer compares (2*moves vs 3*min / 5*min). Run live with minMoves 5: moves 5->3, 6->3, 7->3, 8->2, 12->2, 13->1 (matches the expected 7->3, 8->2, 12->2, 13->1). Unit tests cover exact 1.5x/2.5x edges, off-by-one, non-integer thresholds, minMoves<=0, overflow, monotonicity. Rule documented in `docs/game-design.md` ("Stars and coins") and `docs/level-schema.md`.
-2. Coins: PARTIAL, as stated (known, not a failure). 10 / 15 / 20 per win verified by tests (`Coins_Are10PerWinPlus5PerStarAbove1`, `RecordWin_EarnsCoinsForItsStars`). Saved with progress (file store round trip test). Spend API `ProgressService.TrySpendCoins` is correct: pays and saves once and raises Changed; exact balance leaves 0; insufficient funds changes nothing and does not save; 0 is free with no save; negative throws. Boosters do not exist yet (#56).
-3. Best stars kept + Edit Mode tests: MET. Best stars never decrease (`RecordWin_Replays_EarnCoinsEveryTime_ButKeepBestStars`, `Wallet_FileStore_RoundTripsCoinsAndBestStars`); earn, spend and save all have Edit Mode tests.
+## 5. Booster slot shrink and overlap
+`HudLayoutTests.CoinPill_AtEveryWidth_StaysInTheRow_WithoutTouchingBoostersOrSettings` runs 360x742.33, 360x616 and 412x915 dp for text "0", "20", "999", "1250", "99999" and "99K+": pill stays left of settings, clear of the last booster by the gap, `BottomBarFits`, and every booster width >= 48 dp (touch floor). `CoinPill_GrowsLeftwards_AndTheBoostersNeverMove` confirms the right edge is fixed and boosters do not move as the balance grows. All pass. Slots at about 48.2 dp on a 360 dp phone are just above the 48 floor: a pass with almost no slack, noted for #56 when boosters get real icons. In the 1080x1920 screenshots nothing overlaps.
 
-## 6. Back-compat
-`Serializer_ReadsASaveFromBeforeCoins_AsZeroCoins_KeepingEverythingElse` and `Wallet_SaveFromBeforeCoins_LoadsWithoutWarning_AndEarnsFromZero` pass: a version-1 save without `coins` loads as 0 coins, keeps stars/unlocks/tutorials, and logs no warning. A negative `coins` value is a rejected test case.
+## 6. Test-diff audit (vs origin/task/44-stars-coin-wallet)
+Every removal matches a removed feature or a changed rule; none weakened.
+- `ClearCounterTests`: the coin-landing tests (`ClearWithACoin_TicksUpWhenTheCoinLands`, `EachLandingAddsExactlyOne...`, the dropped-flying-coins case) went with the flight (ruling 4). Clear-once, reset-on-load and 0-start are kept (`Cleared` instead of `Shown`), and `ManyClears_AreAllCounted` (100) is added. `Text_IsCachedAndCapped` ("99+") was removed with the tally's `Text` property: the tally is no longer drawn (the pill shows the wallet), so there is nothing to cap. Acceptable.
+- `GameFeelPlayModeTests`: the clear-coin test is renamed and now asserts no coin in flight and counted at once; Retry/Next reset, skipped-pop and never-twice assertions are kept. `Feel_AllocatesNothing_...` keeps its zero-alloc assertion and 150-frame window; only "Coin" dropped from the name and comments.
+- `ProgressRulesTests` replay test: replaced by the new replay rule (ruling 2) with more cases (45 total coins assertion dropped because replays no longer pay every time).
+- `ProgressPlayModeTests`: the old wallet tests (every win, replays included, adds coins; "a win's coins show at once") encoded the superseded rule; replaced by the Win-card/count-up, no-line-on-replay, left-mid-flight and 5-digit pill tests. The `Launch()` helper was removed from this file; Play Mode still passes and the file launches via its shared setup. Net coverage went up (+5 Play Mode tests overall: 82 -> 87).
+- `CoinBalanceTextTests`: 9999+ -> 99K+ per ruling 6; more cases added.
+- `WinRewardsTests`: `CoinsForWin(stars)` cases replaced by the (stars, previousBest, config) versions; no thresholds changed.
+- No test was deleted without a replacement tied to a ruling, and no star or frame-time threshold was touched.
 
-## 7. Replaced tests (CLAUDE.md: no weakening)
-Reviewed the diff; none weakened.
-- `Serializer_NeverWritesCoins` -> `Serializer_RoundTripsCoins`: the old assertion encoded the placeholder rule "no coins in the save", which the issue reverses. The new one asserts `"coins":135` is written, read back, and survives Clone, plus a new old-save test and a negative-coins rejection.
-- `StarsForAWin_MatchTheWinCard` -> `WinCardStarSlots_MatchMaxStars`: `StarsForWin()` was removed because stars are no longer constant; the new test keeps the same invariant (3 slots == `UiFeel.WinStars` == MaxStars). Star behaviour is now covered far more deeply by `WinRewardsTests`.
-- GameFeel clear-tally checks `hud.CountText` -> `hud.Counter.Shown`: same values asserted (0, 1, 2, reset to 0), now against the tally rather than the pill that shows the wallet; new assertions add that a clear leaves the wallet at "0". Added `WinStarsLit == 3` check.
-- All `RecordWin` call sites only gained the new stars argument. No thresholds changed.
+## 7. Frame time and build size
+- Frame time: the Play Mode frame-time tests (`FrameBudgetMs = 16.6`, plus `Feel_FrameTimeAndGc_AreMeasured_OnABusyChain` and the allocation test) all passed in the 87 / 87 run. The editor FPS overlay in older captures is an unfocused-editor artifact, not a device figure.
+- Build size: NOT measured (no Android build run). Change adds about 1,590 lines across 38 files (mostly C# and tests), 3 PNGs under docs/qa, no new packages or art assets; expected impact negligible.
 
-## 8. Frame time and build size
-- Frame time: the Play Mode frame-time tests (16.6 ms budget) passed. The editor FPS overlay read about 6-7 fps in the screenshots because the editor was unfocused/driven over MCP; this is not a device number and is not what the test measures.
-- Build size: NOT measured (no Android build run in this QA pass). Change is about 840 lines added across 31 files (mostly tests and docs), 0 new assets or packages, so the expected impact is negligible.
+## 8. Screenshots in docs/qa/44/
+- Kept: `win_card_plus20_coins.png` (Win card with "+20" line), `hud_coin_pill_5_digits.png` ("99999"), `hud_coin_pill_overflow.png` ("99K+"). All 1080x1920.
+- Removed as stale: `win_card_2_of_3_stars.png` (pre-ruling card with no "+N" line, and the old pill) and `hud_coin_pill_wallet_135.png` (old cramped pill and old booster-slot size; the 5-digit and overflow captures now cover the pill). The 3-star card with its "+20" line replaces the former.
+- Gap: there is no screenshot of a 2-star card with "+15", or of a replay with the line hidden. Both are covered by Play Mode tests, not by an image. Captures are staged (the level was not played to a win); the real path is covered by the Play Mode tests.
 
 ## 9. Player-facing notes (non-blocking)
-- Dim star (#D7CCC8) on the cream card is low contrast but readable in the screenshot; the lit/dim difference is clear.
-- The Win card lacks a "+N coins" line, so the player only sees the earned coins in the pill after closing (design call for Muthu, not an acceptance item).
-- Coin pill is a display, not a tap target, so the 48 px rule does not apply.
+- The dim star (#D7CCC8) is low contrast on the cream card but readable; ruling 7 keeps it as a placeholder.
+- The coin pill is a display, not a tap target, so the 48 dp rule does not apply to it. The booster slots are placeholders for #56 and sit at 48.2 dp on a 360 dp phone.
+- "99K+" is the overflow text; fine at the current economy (levels top out at 20 coins each).
+- "Spent by boosters" remains a known partial owned by #56: the spend API exists and is unit tested, no booster consumes it yet.
 
 RESULT: PASS
 
-Top issues for the author: none blocking. Follow-ups: wire the spend API to boosters in #56; consider showing coins earned on the Win card; measure build size in a release-candidate build.
+Top issues for the author (none blocking):
+1. db399c2 does not compile its Play Mode assembly; consider squashing or fixing the history before merge so the branch bisects.
+2. Booster slots at 48.2 dp on 360 dp phones leave about 0.2 dp over the 48 dp floor; any future widening of the pill or margins breaks it (a test guards this).
+3. Add images for a 2-star "+15" card and a replay with no line if you want visual evidence for those cases.
+4. Build size not measured; do it in the release-candidate build.
