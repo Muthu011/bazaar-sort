@@ -57,6 +57,24 @@ Level files may only use these ids (snake_case, case-sensitive). The code copy i
 - The final wording of the Continue button is checked in Slice 6, when the rewarded ad is wired.
 - No interstitial and no penalty after a fail: no ad, no lost coins, stars or unlocks, nothing saved. The player just tries again.
 
+### Stars and coins (issue #44)
+Code: `Game.Core.WinRewards` (rules), the wallet in the progress save (`Game.Services.ProgressService`).
+- Moves: every successful move since the level was loaded. A drop back on the same shelf is a cancel and doesn't count. Retry starts again at 0.
+- Stars, against the solver's shortest win (`solver.minMoves` in the level file):
+  - 3 stars: moves at or under minMoves x 1.5.
+  - 2 stars: moves at or under minMoves x 2.5.
+  - 1 star: anything more. Every win earns at least 1 star.
+- Thresholds that aren't whole numbers are not rounded. With minMoves 5, 7 moves is 3 stars (7 ≤ 7.5) and 8 moves is 2 stars. The code compares 2 x moves with 3 x minMoves and 5 x minMoves, so the check is exact.
+- A level with no minMoves (missing, 0 or negative, for example a test board the solver hasn't stamped) gives 3 stars. Every shipped level must have one (`LevelParserTests`).
+- Coins per win: 10, plus 5 for each star above 1. So 1 star = 10, 2 stars = 15, 3 stars = 20.
+- Every win adds its coins, replays of a level already won included. The save keeps the best stars per level, and stars never go down.
+- The win, its best stars, its coins and the unlock are saved in one write, the moment the board is won.
+- Wallet: saved with progress (`coins` in `progress.json`) and never negative. A spend can't take more coins than the wallet holds; with too few coins nothing changes and nothing is saved. Boosters spend from the wallet (prices: #56).
+- A save written before coins existed loads as 0 coins and keeps its stars and unlocks.
+- A fail costs nothing (see Fail).
+- HUD: the coin pill shows the wallet balance (up to 9999, then "9999+") and updates on every win and spend. The coin that flies to the pill on each clear is feel only: clears earn no coins.
+- Win card: three star slots. The earned stars are lit in marigold and the rest show as dim empty stars.
+
 ### Board size and touch areas (decided by Muthu, Oct 2026)
 - The 4–12 shelf layout is fixed. Don't shrink or move shelves or items to make tap targets bigger.
 - Each item's touch area is bigger than its picture: it extends into the gaps between items and halfway into the gaps between shelves, to reach 48 dp wherever there's room.
