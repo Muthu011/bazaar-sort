@@ -1,7 +1,6 @@
-# World 1, pack 2 (levels 6 to 14)
+# World 1, pack 2 (levels 6 to 15)
 
-Issue #23. Levels 6 to 14 of the World 1 sawtooth; L15 (hard) is split into its own issue until the solver handles it
-(see "Solver hangs on locked levels"). Solver numbers come from each level's `solver` block (seed 20270112, 1000 plays):
+Issues #23 and #32. Levels 6 to 15 of the World 1 sawtooth (L15 added in #32). Solver numbers come from each level's `solver` block (seed 20270112, 1000 plays):
 minimum moves (A*), first-try win-rate estimate and dead-end rate. Targets: L1 to L6 and L8 to L9 at least 0.90; L7 and
 L10 at least 0.75; from L11, easy 0.85 to 1.00, medium 0.70 to 0.85 (docs/game-design.md).
 
@@ -16,6 +15,7 @@ L10 at least 0.75; from L11, easy 0.85 to 1.00, medium 0.70 to 0.85 (docs/game-d
 | w1_l012 | easy | 6 | 1 | 1 | 21 | 7 | 15 | 0.943 | 0.001 | Easy lock practice: one lock that needs 2 clears. |
 | w1_l013 | medium | 7 | 2 | 2 | 33 | 9 | 23 | 0.788 | 0.002 | Medium: two locks (2 and 3 clears) so the player chooses which to open first. |
 | w1_l014 | medium | 7 | 2 | 2 | 39 | 10 | 25 | 0.796 | 0.002 | Medium: two locks (2 and 1 clears) on a ten-type board. |
+| w1_l015 | hard | 8 | 1 | 2 | 48 | 10 | 31 | 0.446 | 0.004 | Hard: eight shelves, one lock (3 clears) and three layers deep; a blocked shelf plus tight free slots make wrong early moves costly. |
 
 ## Re-check of levels 1 to 5
 
